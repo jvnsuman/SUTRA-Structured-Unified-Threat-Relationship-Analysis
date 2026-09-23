@@ -10,6 +10,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Run as an unprivileged user.
+RUN useradd --create-home --uid 10001 app && chown -R app /app
+USER app
+
 EXPOSE 8000
 
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply migrations, then serve. ONE worker on purpose: sessions and the
+# login rate limiter are in-process (see SECURITY.md); scale out only after
+# moving them to Redis.
+CMD ["sh", "-c", "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8000 --workers 1"]

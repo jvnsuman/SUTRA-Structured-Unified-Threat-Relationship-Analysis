@@ -14,9 +14,23 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+      # No torch/transformers here: the default pipeline doesn't need them,
+      # which keeps this job to ~1-2 minutes instead of ~10.
       - run: pip install -r requirements.txt
-      
-      - run: pytest tests/ -v
+
+      - name: Lint (syntax errors, undefined names, unused imports)
+        run: ruff check .
+
+      - name: Migrations apply on a fresh database and match the models
+        env:
+          DATABASE_URL: sqlite:///./ci_migration_check.db
+        run: |
+          alembic upgrade head
+          alembic check
+
+      - name: Tests with coverage (includes the NLP quality regression guard)
+        run: pytest tests/ -q --cov=. --cov-report=term-missing:skip-covered --cov-fail-under=70
 
   frontend:
     runs-on: ubuntu-latest
@@ -28,5 +42,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - run: npm install
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
       - run: npm run build

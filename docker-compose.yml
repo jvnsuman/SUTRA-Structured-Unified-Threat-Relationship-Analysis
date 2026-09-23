@@ -11,7 +11,7 @@ services:
     volumes:
       - cna-postgres-data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # local-only: never expose the demo DB (default creds) to the network
     # api waits for this healthcheck before starting, so it never
     # races Postgres's own startup time.
     healthcheck:
@@ -25,6 +25,8 @@ services:
     ports:
       - "8000:8000"
     environment:
+      # Demo credentials for the local stack only. For any real deployment
+      # set a strong password here AND in the db service (see SECURITY.md).
       - DATABASE_URL=postgresql://cna_user:cna_password@db:5432/cna
     depends_on:
       db:

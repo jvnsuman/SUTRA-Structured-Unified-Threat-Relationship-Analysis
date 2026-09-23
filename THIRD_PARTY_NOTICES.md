@@ -1,4 +1,4 @@
-# Third-Party Notices — SIH26189 (AI-Powered Criminal Network Analysis System)
+# Third-Party Notices — SUTRA (SIH26189, AI-Powered Criminal Network Analysis System)
 
 This project is licensed under **Apache License 2.0** (see `LICENSE`).
 
@@ -47,3 +47,15 @@ All FIR, CDR, financial, and criminal-history records used in this project are
 **entirely synthetic and fictional**. No real personal data, real case data,
 or real individuals are represented. See project notes Section 9 for the
 synthetic data generation strategy.
+
+## Additions
+
+| Component | Licence | Notes |
+|---|---|---|
+| reportlab | BSD-3-Clause | PDF report export (`api/report_builder.py`) |
+| Alembic | MIT | Schema migrations |
+| pytest-cov, ruff | MIT | Dev/CI only |
+| torch, transformers | BSD-3-Clause / Apache-2.0 | **Optional** (`requirements-ml.txt`); not needed by the default pipeline. Verify the licence of any *model weights* you download separately: they are often not under the library's licence. |
+
+The Devanagari/Hindi support is rule-based (gazetteer + transliteration written for this project); it
+adopts no third-party model, so no additional model licence applies.
