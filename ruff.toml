@@ -1,0 +1,9 @@
+# Lint for real defects only (syntax errors, undefined names, unused
+# imports/variables) -- not style. Keeps CI signal high.
+line-length = 120
+target-version = "py312"
+extend-exclude = ["alembic/versions", "dashboard"]
+
+[lint]
+select = ["E9", "F"]
+ignore = ["F401"]   # re-exports (nlp/extraction.py) are intentional

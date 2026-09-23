@@ -1,0 +1,847 @@
+{
+ "description": "Hand-written, hand-labelled FIR-style documents in realistic Indian police-report style (fictional people, numbers, plates and organisations). Independent of data/trafficking_scenario.py. Gold entities are listed in order of appearance; cluster ids mark the same real-world entity across documents. `relations` are [doc_id, cluster_a, cluster_b, type] triples, annotated for every clear relation in each document; scored at entity level (so 'Bablu' and 'Ramesh Sharma' are the same endpoint).",
+ "documents": [
+  {
+   "doc_id": "h01",
+   "text": "On 12/03/2026 complainant Smt. Sunita Devi r/o village Rampur stated that her daughter was taken by one Ramesh Sharma alias Bablu to Delhi in a white Maruti Swift DL8CAF5031."
+  },
+  {
+   "doc_id": "h02",
+   "text": "Accused Mohd. Irfan @ Guddu r/o Sector 14 Gurgaon was contacted on mob 98110-22334 and +91 9811022334."
+  },
+  {
+   "doc_id": "h03",
+   "text": "RAMESH SHARMA seen at bus stand Anand Vihar ISBT with unknown female. He was using number 9876501234."
+  },
+  {
+   "doc_id": "h04",
+   "text": "Deepak Verma transferred Rs 49,500 via UPI to Anil Kumar; suspect Anil Kumar is associated with Sai Placement Services Pvt Ltd."
+  },
+  {
+   "doc_id": "h05",
+   "text": "Bablu was traced on 9876501234 near Gorakhpur Bus Stand and later at Sonauli."
+  },
+  {
+   "doc_id": "h06",
+   "text": "Complainant Shri Ganesh Prasad stated that Mohammad Irfan alias Guddu demanded money and threatened him from phone 9811022334."
+  },
+  {
+   "doc_id": "h07",
+   "text": "Raju Kumar was seen near MG Road, phone 987-654-3210. Vehicle MH12AB1234 was parked outside Sunrise Traders Pvt Ltd."
+  },
+  {
+   "doc_id": "h08",
+   "text": "A call from Raju S. was traced to number 987-654-3210 at Shastri Nagar."
+  },
+  {
+   "doc_id": "h09",
+   "text": "Priya Sharma reported that Ramesh Verma of village Sultanpur contacted her on 9123456780."
+  },
+  {
+   "doc_id": "h10",
+   "text": "Informant stated that Ramesh Verma @ Chintu uses a Bolero UP32AB4567 and stays in Sector 22 Noida."
+  },
+  {
+   "doc_id": "h11",
+   "text": "Suresh Yadav, alias Sonu, was arrested at Kashmere Gate ISBT with a Tata tempo HR55AC1122; he works for Maa Durga Manpower Consultants."
+  },
+  {
+   "doc_id": "h12",
+   "text": "Sonu was seen again at Kashmere Gate ISBT and used SIM 9898989898."
+  },
+  {
+   "doc_id": "h13",
+   "text": "राजू कुमार को एमजी रोड पर देखा गया। मोबाइल नंबर ९८११०२२३३४ पर संपर्क हुआ।"
+  },
+  {
+   "doc_id": "h14",
+   "text": "शिकायतकर्ता सुनीता देवी ने बताया कि रमेश यादव उनकी बेटी को दिल्ली ले गया।"
+  },
+  {
+   "doc_id": "h15",
+   "text": "Raju Kumar of village Hariharpur, PS Thawe, district Gopalganj was questioned about a/c no 123456789012."
+  },
+  {
+   "doc_id": "h16",
+   "text": "SURESH YADAV ALIAS SONU WAS FOUND NEAR ANAND VIHAR ISBT ON MOBILE 9812345678."
+  },
+  {
+   "doc_id": "h17",
+   "text": "Complainant Kavita Singh stated that her sister went missing after meeting Mahesh Pandey, who called from 9700011122."
+  },
+  {
+   "doc_id": "h18",
+   "text": "Mahesh Pandey @ Golu operates from Sector 31 Gurgaon and runs Star Job Agency."
+  },
+  {
+   "doc_id": "h19",
+   "text": "The vehicle DL1CAB7788 registered to Vinod Rai was found at Raxaul."
+  },
+  {
+   "doc_id": "h20",
+   "text": "Vinod Rai paid Rs 45,000 to rahul@okaxis for arranging travel."
+  }
+ ],
+ "gold": [
+  {
+   "doc_id": "h01",
+   "text": "Sunita Devi",
+   "type": "PERSON",
+   "cluster": "sunita_devi"
+  },
+  {
+   "doc_id": "h01",
+   "text": "Rampur",
+   "type": "LOCATION",
+   "cluster": "rampur"
+  },
+  {
+   "doc_id": "h01",
+   "text": "Ramesh Sharma",
+   "type": "PERSON",
+   "cluster": "ramesh_sharma"
+  },
+  {
+   "doc_id": "h01",
+   "text": "Bablu",
+   "type": "PERSON",
+   "cluster": "ramesh_sharma"
+  },
+  {
+   "doc_id": "h01",
+   "text": "Delhi",
+   "type": "LOCATION",
+   "cluster": "delhi"
+  },
+  {
+   "doc_id": "h01",
+   "text": "DL8CAF5031",
+   "type": "VEHICLE",
+   "cluster": "veh_swift"
+  },
+  {
+   "doc_id": "h02",
+   "text": "Mohd. Irfan",
+   "type": "PERSON",
+   "cluster": "irfan"
+  },
+  {
+   "doc_id": "h02",
+   "text": "Guddu",
+   "type": "PERSON",
+   "cluster": "irfan"
+  },
+  {
+   "doc_id": "h02",
+   "text": "Sector 14 Gurgaon",
+   "type": "LOCATION",
+   "cluster": "sector14_gurgaon"
+  },
+  {
+   "doc_id": "h02",
+   "text": "98110-22334",
+   "type": "PHONE",
+   "cluster": "ph_9811022334"
+  },
+  {
+   "doc_id": "h02",
+   "text": "9811022334",
+   "type": "PHONE",
+   "cluster": "ph_9811022334"
+  },
+  {
+   "doc_id": "h03",
+   "text": "RAMESH SHARMA",
+   "type": "PERSON",
+   "cluster": "ramesh_sharma"
+  },
+  {
+   "doc_id": "h03",
+   "text": "Anand Vihar ISBT",
+   "type": "LOCATION",
+   "cluster": "anand_vihar"
+  },
+  {
+   "doc_id": "h03",
+   "text": "9876501234",
+   "type": "PHONE",
+   "cluster": "ph_9876501234"
+  },
+  {
+   "doc_id": "h04",
+   "text": "Deepak Verma",
+   "type": "PERSON",
+   "cluster": "deepak_verma"
+  },
+  {
+   "doc_id": "h04",
+   "text": "Anil Kumar",
+   "type": "PERSON",
+   "cluster": "anil_kumar"
+  },
+  {
+   "doc_id": "h04",
+   "text": "Anil Kumar",
+   "type": "PERSON",
+   "cluster": "anil_kumar"
+  },
+  {
+   "doc_id": "h04",
+   "text": "Sai Placement Services Pvt Ltd",
+   "type": "ORGANIZATION",
+   "cluster": "sai_placement"
+  },
+  {
+   "doc_id": "h05",
+   "text": "Bablu",
+   "type": "PERSON",
+   "cluster": "ramesh_sharma"
+  },
+  {
+   "doc_id": "h05",
+   "text": "9876501234",
+   "type": "PHONE",
+   "cluster": "ph_9876501234"
+  },
+  {
+   "doc_id": "h05",
+   "text": "Gorakhpur Bus Stand",
+   "type": "LOCATION",
+   "cluster": "gorakhpur_bs"
+  },
+  {
+   "doc_id": "h05",
+   "text": "Sonauli",
+   "type": "LOCATION",
+   "cluster": "sonauli"
+  },
+  {
+   "doc_id": "h06",
+   "text": "Ganesh Prasad",
+   "type": "PERSON",
+   "cluster": "ganesh_prasad"
+  },
+  {
+   "doc_id": "h06",
+   "text": "Mohammad Irfan",
+   "type": "PERSON",
+   "cluster": "irfan"
+  },
+  {
+   "doc_id": "h06",
+   "text": "Guddu",
+   "type": "PERSON",
+   "cluster": "irfan"
+  },
+  {
+   "doc_id": "h06",
+   "text": "9811022334",
+   "type": "PHONE",
+   "cluster": "ph_9811022334"
+  },
+  {
+   "doc_id": "h07",
+   "text": "Raju Kumar",
+   "type": "PERSON",
+   "cluster": "raju_kumar"
+  },
+  {
+   "doc_id": "h07",
+   "text": "MG Road",
+   "type": "LOCATION",
+   "cluster": "mg_road"
+  },
+  {
+   "doc_id": "h07",
+   "text": "987-654-3210",
+   "type": "PHONE",
+   "cluster": "ph_9876543210"
+  },
+  {
+   "doc_id": "h07",
+   "text": "MH12AB1234",
+   "type": "VEHICLE",
+   "cluster": "veh_mh12"
+  },
+  {
+   "doc_id": "h07",
+   "text": "Sunrise Traders Pvt Ltd",
+   "type": "ORGANIZATION",
+   "cluster": "sunrise"
+  },
+  {
+   "doc_id": "h08",
+   "text": "Raju S.",
+   "type": "PERSON",
+   "cluster": "raju_kumar"
+  },
+  {
+   "doc_id": "h08",
+   "text": "987-654-3210",
+   "type": "PHONE",
+   "cluster": "ph_9876543210"
+  },
+  {
+   "doc_id": "h08",
+   "text": "Shastri Nagar",
+   "type": "LOCATION",
+   "cluster": "shastri_nagar"
+  },
+  {
+   "doc_id": "h09",
+   "text": "Priya Sharma",
+   "type": "PERSON",
+   "cluster": "priya_sharma"
+  },
+  {
+   "doc_id": "h09",
+   "text": "Ramesh Verma",
+   "type": "PERSON",
+   "cluster": "ramesh_verma"
+  },
+  {
+   "doc_id": "h09",
+   "text": "Sultanpur",
+   "type": "LOCATION",
+   "cluster": "sultanpur"
+  },
+  {
+   "doc_id": "h09",
+   "text": "9123456780",
+   "type": "PHONE",
+   "cluster": "ph_9123456780"
+  },
+  {
+   "doc_id": "h10",
+   "text": "Ramesh Verma",
+   "type": "PERSON",
+   "cluster": "ramesh_verma"
+  },
+  {
+   "doc_id": "h10",
+   "text": "Chintu",
+   "type": "PERSON",
+   "cluster": "ramesh_verma"
+  },
+  {
+   "doc_id": "h10",
+   "text": "UP32AB4567",
+   "type": "VEHICLE",
+   "cluster": "veh_bolero"
+  },
+  {
+   "doc_id": "h10",
+   "text": "Sector 22 Noida",
+   "type": "LOCATION",
+   "cluster": "sector22_noida"
+  },
+  {
+   "doc_id": "h11",
+   "text": "Suresh Yadav",
+   "type": "PERSON",
+   "cluster": "suresh_yadav"
+  },
+  {
+   "doc_id": "h11",
+   "text": "Sonu",
+   "type": "PERSON",
+   "cluster": "suresh_yadav"
+  },
+  {
+   "doc_id": "h11",
+   "text": "Kashmere Gate ISBT",
+   "type": "LOCATION",
+   "cluster": "kashmere"
+  },
+  {
+   "doc_id": "h11",
+   "text": "HR55AC1122",
+   "type": "VEHICLE",
+   "cluster": "veh_tempo"
+  },
+  {
+   "doc_id": "h11",
+   "text": "Maa Durga Manpower Consultants",
+   "type": "ORGANIZATION",
+   "cluster": "maa_durga"
+  },
+  {
+   "doc_id": "h12",
+   "text": "Sonu",
+   "type": "PERSON",
+   "cluster": "suresh_yadav"
+  },
+  {
+   "doc_id": "h12",
+   "text": "Kashmere Gate ISBT",
+   "type": "LOCATION",
+   "cluster": "kashmere"
+  },
+  {
+   "doc_id": "h12",
+   "text": "9898989898",
+   "type": "PHONE",
+   "cluster": "ph_9898989898"
+  },
+  {
+   "doc_id": "h13",
+   "text": "राजू कुमार",
+   "type": "PERSON",
+   "cluster": "raju_kumar"
+  },
+  {
+   "doc_id": "h13",
+   "text": "एमजी रोड",
+   "type": "LOCATION",
+   "cluster": "mg_road"
+  },
+  {
+   "doc_id": "h13",
+   "text": "९८११०२२३३४",
+   "type": "PHONE",
+   "cluster": "ph_9811022334"
+  },
+  {
+   "doc_id": "h14",
+   "text": "सुनीता देवी",
+   "type": "PERSON",
+   "cluster": "sunita_devi"
+  },
+  {
+   "doc_id": "h14",
+   "text": "रमेश यादव",
+   "type": "PERSON",
+   "cluster": "ramesh_yadav"
+  },
+  {
+   "doc_id": "h14",
+   "text": "दिल्ली",
+   "type": "LOCATION",
+   "cluster": "delhi"
+  },
+  {
+   "doc_id": "h15",
+   "text": "Raju Kumar",
+   "type": "PERSON",
+   "cluster": "raju_kumar"
+  },
+  {
+   "doc_id": "h15",
+   "text": "Hariharpur",
+   "type": "LOCATION",
+   "cluster": "hariharpur"
+  },
+  {
+   "doc_id": "h15",
+   "text": "Thawe",
+   "type": "LOCATION",
+   "cluster": "thawe"
+  },
+  {
+   "doc_id": "h15",
+   "text": "Gopalganj",
+   "type": "LOCATION",
+   "cluster": "gopalganj"
+  },
+  {
+   "doc_id": "h15",
+   "text": "123456789012",
+   "type": "ACCOUNT",
+   "cluster": "ac_123456789012"
+  },
+  {
+   "doc_id": "h16",
+   "text": "SURESH YADAV",
+   "type": "PERSON",
+   "cluster": "suresh_yadav"
+  },
+  {
+   "doc_id": "h16",
+   "text": "SONU",
+   "type": "PERSON",
+   "cluster": "suresh_yadav"
+  },
+  {
+   "doc_id": "h16",
+   "text": "ANAND VIHAR ISBT",
+   "type": "LOCATION",
+   "cluster": "anand_vihar"
+  },
+  {
+   "doc_id": "h16",
+   "text": "9812345678",
+   "type": "PHONE",
+   "cluster": "ph_9812345678"
+  },
+  {
+   "doc_id": "h17",
+   "text": "Kavita Singh",
+   "type": "PERSON",
+   "cluster": "kavita_singh"
+  },
+  {
+   "doc_id": "h17",
+   "text": "Mahesh Pandey",
+   "type": "PERSON",
+   "cluster": "mahesh_pandey"
+  },
+  {
+   "doc_id": "h17",
+   "text": "9700011122",
+   "type": "PHONE",
+   "cluster": "ph_9700011122"
+  },
+  {
+   "doc_id": "h18",
+   "text": "Mahesh Pandey",
+   "type": "PERSON",
+   "cluster": "mahesh_pandey"
+  },
+  {
+   "doc_id": "h18",
+   "text": "Golu",
+   "type": "PERSON",
+   "cluster": "mahesh_pandey"
+  },
+  {
+   "doc_id": "h18",
+   "text": "Sector 31 Gurgaon",
+   "type": "LOCATION",
+   "cluster": "sector31_gurgaon"
+  },
+  {
+   "doc_id": "h18",
+   "text": "Star Job Agency",
+   "type": "ORGANIZATION",
+   "cluster": "star_job"
+  },
+  {
+   "doc_id": "h19",
+   "text": "DL1CAB7788",
+   "type": "VEHICLE",
+   "cluster": "veh_dl1"
+  },
+  {
+   "doc_id": "h19",
+   "text": "Vinod Rai",
+   "type": "PERSON",
+   "cluster": "vinod_rai"
+  },
+  {
+   "doc_id": "h19",
+   "text": "Raxaul",
+   "type": "LOCATION",
+   "cluster": "raxaul"
+  },
+  {
+   "doc_id": "h20",
+   "text": "Vinod Rai",
+   "type": "PERSON",
+   "cluster": "vinod_rai"
+  },
+  {
+   "doc_id": "h20",
+   "text": "rahul@okaxis",
+   "type": "ACCOUNT",
+   "cluster": "upi_rahul"
+  }
+ ],
+ "relations": [
+  [
+   "h01",
+   "sunita_devi",
+   "rampur",
+   "present-at"
+  ],
+  [
+   "h01",
+   "ramesh_sharma",
+   "veh_swift",
+   "owns"
+  ],
+  [
+   "h01",
+   "ramesh_sharma",
+   "delhi",
+   "present-at"
+  ],
+  [
+   "h01",
+   "sunita_devi",
+   "ramesh_sharma",
+   "associated-with"
+  ],
+  [
+   "h02",
+   "irfan",
+   "ph_9811022334",
+   "calls"
+  ],
+  [
+   "h02",
+   "irfan",
+   "sector14_gurgaon",
+   "present-at"
+  ],
+  [
+   "h03",
+   "ramesh_sharma",
+   "anand_vihar",
+   "present-at"
+  ],
+  [
+   "h03",
+   "ramesh_sharma",
+   "ph_9876501234",
+   "calls"
+  ],
+  [
+   "h04",
+   "deepak_verma",
+   "anil_kumar",
+   "transacts-with"
+  ],
+  [
+   "h04",
+   "anil_kumar",
+   "sai_placement",
+   "associated-with"
+  ],
+  [
+   "h05",
+   "ramesh_sharma",
+   "ph_9876501234",
+   "calls"
+  ],
+  [
+   "h05",
+   "ramesh_sharma",
+   "gorakhpur_bs",
+   "present-at"
+  ],
+  [
+   "h05",
+   "ramesh_sharma",
+   "sonauli",
+   "present-at"
+  ],
+  [
+   "h06",
+   "irfan",
+   "ph_9811022334",
+   "calls"
+  ],
+  [
+   "h06",
+   "ganesh_prasad",
+   "irfan",
+   "associated-with"
+  ],
+  [
+   "h07",
+   "raju_kumar",
+   "mg_road",
+   "present-at"
+  ],
+  [
+   "h07",
+   "raju_kumar",
+   "ph_9876543210",
+   "calls"
+  ],
+  [
+   "h08",
+   "raju_kumar",
+   "ph_9876543210",
+   "calls"
+  ],
+  [
+   "h08",
+   "raju_kumar",
+   "shastri_nagar",
+   "present-at"
+  ],
+  [
+   "h09",
+   "ramesh_verma",
+   "sultanpur",
+   "present-at"
+  ],
+  [
+   "h09",
+   "ramesh_verma",
+   "ph_9123456780",
+   "calls"
+  ],
+  [
+   "h09",
+   "priya_sharma",
+   "ramesh_verma",
+   "associated-with"
+  ],
+  [
+   "h10",
+   "ramesh_verma",
+   "veh_bolero",
+   "owns"
+  ],
+  [
+   "h10",
+   "ramesh_verma",
+   "sector22_noida",
+   "present-at"
+  ],
+  [
+   "h11",
+   "suresh_yadav",
+   "kashmere",
+   "present-at"
+  ],
+  [
+   "h11",
+   "suresh_yadav",
+   "veh_tempo",
+   "owns"
+  ],
+  [
+   "h11",
+   "suresh_yadav",
+   "maa_durga",
+   "associated-with"
+  ],
+  [
+   "h12",
+   "suresh_yadav",
+   "kashmere",
+   "present-at"
+  ],
+  [
+   "h12",
+   "suresh_yadav",
+   "ph_9898989898",
+   "calls"
+  ],
+  [
+   "h13",
+   "raju_kumar",
+   "mg_road",
+   "present-at"
+  ],
+  [
+   "h14",
+   "sunita_devi",
+   "ramesh_yadav",
+   "associated-with"
+  ],
+  [
+   "h14",
+   "ramesh_yadav",
+   "delhi",
+   "present-at"
+  ],
+  [
+   "h15",
+   "raju_kumar",
+   "hariharpur",
+   "present-at"
+  ],
+  [
+   "h15",
+   "raju_kumar",
+   "thawe",
+   "present-at"
+  ],
+  [
+   "h15",
+   "raju_kumar",
+   "gopalganj",
+   "present-at"
+  ],
+  [
+   "h15",
+   "raju_kumar",
+   "ac_123456789012",
+   "associated-with"
+  ],
+  [
+   "h16",
+   "suresh_yadav",
+   "anand_vihar",
+   "present-at"
+  ],
+  [
+   "h16",
+   "suresh_yadav",
+   "ph_9812345678",
+   "calls"
+  ],
+  [
+   "h17",
+   "kavita_singh",
+   "mahesh_pandey",
+   "associated-with"
+  ],
+  [
+   "h17",
+   "mahesh_pandey",
+   "ph_9700011122",
+   "calls"
+  ],
+  [
+   "h18",
+   "mahesh_pandey",
+   "sector31_gurgaon",
+   "present-at"
+  ],
+  [
+   "h18",
+   "mahesh_pandey",
+   "star_job",
+   "associated-with"
+  ],
+  [
+   "h19",
+   "vinod_rai",
+   "veh_dl1",
+   "owns"
+  ],
+  [
+   "h19",
+   "vinod_rai",
+   "raxaul",
+   "present-at"
+  ],
+  [
+   "h20",
+   "vinod_rai",
+   "upi_rahul",
+   "transacts-with"
+  ]
+ ],
+ "expected_same_person": [
+  [
+   "ramesh_sharma",
+   "Ramesh Sharma / Bablu / RAMESH SHARMA across h01, h03, h05 (alias declared in h01)"
+  ],
+  [
+   "irfan",
+   "Mohd. Irfan / Guddu / Mohammad Irfan across h02, h06"
+  ],
+  [
+   "raju_kumar",
+   "Raju Kumar / Raju S. / Devanagari across h07, h08, h13, h15"
+  ],
+  [
+   "suresh_yadav",
+   "Suresh Yadav / Sonu across h11, h12, h16"
+  ],
+  [
+   "mahesh_pandey",
+   "Mahesh Pandey / Golu across h17, h18"
+  ],
+  [
+   "ramesh_verma",
+   "Ramesh Verma / Chintu across h09, h10"
+  ]
+ ]
+}
