@@ -8,8 +8,9 @@
  * account system to switch to.
  *
  * "Remember me" is real: unchecked keeps the session in
- * sessionStorage instead of localStorage (see api/client.js), so it
- * clears when the browser closes. "Forgot password?" and "Contact
+ * sessionStorage instead of localStorage (api.login's third
+ * argument — see api/client.js's setToken), so it clears when the
+ * browser closes. "Forgot password?" and "Contact
  * Administrator" are real notices via useToast rather than dead
  * links — this project has no self-service reset or sign-up flow, so
  * both honestly point the user at an administrator instead of
@@ -48,7 +49,7 @@ export default function LoginForm({ onLoggedIn }) {
     <div className="login-card-wrap">
       <form className="login-form" onSubmit={handleSubmit}>
         <h2>Welcome Back</h2>
-        <p className="login-form-subtitle">Sign in to access the criminal network analysis system.</p>
+        <p className="login-form-subtitle">Sign in to access SUTRA — the criminal network analysis system.</p>
 
         <label>
           Email / Username

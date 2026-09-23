@@ -19,10 +19,18 @@
  *
  * "View Full Profile" has no dedicated profile page/route yet, so it
  * surfaces an honest toast instead of linking somewhere fake.
+ *
+ * Also fetches and shows graph.analytics.compute_link_predictions
+ * results (api/routes/query.py's /link-predictions endpoint) as a
+ * "Suggested Links to Investigate" panel — skipped entirely when
+ * usingSampleData is true, since predictions computed against the
+ * fixed SAMPLE_GRAPH would never change and would misleadingly look
+ * like live analysis.
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Download, User } from 'lucide-react'
+import { Download, Lightbulb, User } from 'lucide-react'
+import { api } from '../api/client'
 import GraphCanvas from '../components/GraphCanvas'
 import GraphSkeleton from '../components/GraphSkeleton'
 import { useToast } from '../components/Toast'
@@ -99,9 +107,37 @@ function findConnectedLabel(graphData, entityId, entityType) {
   return null
 }
 
-export default function NetworkGraph({ graphData, caseLoading, usingSampleData, searchQuery, selectedEntityId, onNodeSelect }) {
+export default function NetworkGraph({ graphData, caseLoading, usingSampleData, searchQuery, selectedEntityId, onNodeSelect, selectedCaseId }) {
   const [typeFilter, setTypeFilter] = useState('all')
+  const [predictions, setPredictions] = useState(null)
+  const [predictionsError, setPredictionsError] = useState(null)
+  const [loadingPredictions, setLoadingPredictions] = useState(false)
   const showToast = useToast()
+
+  useEffect(() => {
+    if (!selectedCaseId || usingSampleData) {
+      setPredictions(null)
+      return
+    }
+    setLoadingPredictions(true)
+    api
+      .getLinkPredictions(selectedCaseId, 5)
+      .then((data) => {
+        setPredictions(data.predictions || [])
+        setPredictionsError(null)
+      })
+      .catch((err) => {
+        // A 501 here just means the case has no persisted graph yet —
+        // same "authorized, but nothing to show" case as the main
+        // graph query, not a real error worth surfacing as one.
+        if (err.pending) {
+          setPredictions([])
+        } else {
+          setPredictionsError(err.message)
+        }
+      })
+      .finally(() => setLoadingPredictions(false))
+  }, [selectedCaseId, usingSampleData])
 
   const keyEntityId = useMemo(() => (graphData ? findKeyEntityId(graphData) : null), [graphData])
 
@@ -240,6 +276,40 @@ export default function NetworkGraph({ graphData, caseLoading, usingSampleData, 
           <span className="stat-pill-label">Total Links</span>
         </div>
       </div>
+
+      {!usingSampleData && (
+        <div className="panel link-predictions-panel">
+          <div className="panel-header">
+            <h3>
+              <Lightbulb size={15} /> Suggested Links to Investigate
+            </h3>
+          </div>
+          <p className="panel-status link-predictions-sub">
+            Entity pairs that share several connections but have no direct record linking them yet — a
+            structural lead to manually verify, not an automatic finding.
+          </p>
+          {loadingPredictions ? (
+            <p className="panel-status">Checking…</p>
+          ) : predictionsError ? (
+            <p className="panel-status">{predictionsError}</p>
+          ) : !predictions || predictions.length === 0 ? (
+            <p className="panel-status">No unrecorded-link suggestions for this case right now.</p>
+          ) : (
+            <ul className="link-prediction-list">
+              {predictions.map((p) => (
+                <li key={`${p.entity_a_id}-${p.entity_b_id}`} className="link-prediction-item">
+                  <span>
+                    <strong>{p.entity_a_label}</strong> ↔ <strong>{p.entity_b_label}</strong>
+                  </span>
+                  <span className="link-prediction-shared">
+                    {p.shared_neighbor_ids.length} shared connection{p.shared_neighbor_ids.length === 1 ? '' : 's'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   )
 }

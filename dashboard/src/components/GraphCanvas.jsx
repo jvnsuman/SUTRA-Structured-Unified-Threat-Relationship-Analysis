@@ -16,8 +16,18 @@
  * outward by degree, rather than a force-directed layout that could
  * place the most important entity anywhere.
  *
+ * concentric() only controls a node's RADIUS (which ring it sits on);
+ * it says nothing about its ANGLE within that ring, so two same-degree
+ * nodes with completely different neighbors could land on opposite
+ * sides of the same ring, stretching their edges across the whole
+ * canvas even though they're only one hop out. A short, low-strength
+ * cose (force-directed) pass is chained immediately after concentric
+ * finishes (see refinementLayoutOptions) to nudge each node toward its
+ * actual neighbors without moving it to a different ring — the
+ * main-suspect-centered hierarchy concentric exists for is preserved.
+ *
  * COLOR NOTE: this component was restyled for the light-theme
- * sidebar-nav dashboard (SIH26189_Project_Notes.md Section 12/17).
+ * sidebar-nav dashboard (SUTRA_Project_Notes.md Section 12/17).
  * Node/edge colors are still the same semantic entity-type mapping as
  * before, just re-picked to sit on a light background (see
  * ENTITY_COLORS) — no other logic changed from the original build.
@@ -55,6 +65,7 @@ const ENTITY_COLORS = {
   vehicle: '#f59e0b',
   phone: '#2563eb',
   organization: '#ef4444',
+  account: '#16a34a',
   event: '#94a3b8',
 }
 
@@ -64,6 +75,7 @@ const LEGEND_ITEMS = [
   { label: 'Vehicle', color: ENTITY_COLORS.vehicle },
   { label: 'Phone', color: ENTITY_COLORS.phone },
   { label: 'Organization', color: ENTITY_COLORS.organization },
+  { label: 'Account', color: ENTITY_COLORS.account },
   { label: 'Event', color: ENTITY_COLORS.event },
 ]
 
@@ -160,6 +172,13 @@ function buildStylesheet() {
       style: { width: 40, height: 40 },
     },
     {
+      // Merged on evidence in the review band (0.60-0.80) or ambiguous:
+      // an amber dotted ring tells the investigator "check this merge".
+      selector: 'node[?needsReview]',
+      style: { 'border-width': 4, 'border-color': '#f59e0b', 'border-style': 'dotted' },
+    },
+
+    {
       selector: 'edge',
       style: {
         width: (ele) => 1.2 + Math.min(Number(ele.data('weight')) || 1, 6),
@@ -195,7 +214,7 @@ export default function GraphCanvas({ graphData, onNodeSelect, searchQuery, type
 
     const elements = [
       ...graphData.nodes.map((n) => ({
-        data: { id: n.id, label: n.label, entity_type: n.entity_type },
+        data: { id: n.id, label: n.label, entity_type: n.entity_type, needsReview: !!n.needsReview },
       })),
       ...graphData.edges.map((e) => ({
         data: {
@@ -212,6 +231,8 @@ export default function GraphCanvas({ graphData, onNodeSelect, searchQuery, type
 
     // Concentric layout centered on mainEntityId — other nodes radiate
     // outward by degree, so more-connected entities sit closer in.
+    // See this file's top docstring for why a refinement pass is
+    // chained after this one.
     const centeredLayoutOptions = {
       name: 'concentric',
       animate: false,
@@ -219,6 +240,24 @@ export default function GraphCanvas({ graphData, onNodeSelect, searchQuery, type
       minNodeSpacing: 50,
       concentric: (node) => (node.id() === mainEntityId ? 1000 : node.degree() + 1),
       levelWidth: () => 2,
+    }
+
+    // Short, low-strength cose pass run immediately after concentric
+    // finishes — pulls each node toward its actual edges rather than
+    // leaving same-ring nodes scattered by angle alone. fit: false and
+    // randomize: false keep this a local nudge starting from
+    // concentric's positions, not a full re-layout from scratch;
+    // numIter is kept low so it finishes fast and doesn't have time to
+    // undo the ring structure concentric just established.
+    const refinementLayoutOptions = {
+      name: 'cose',
+      animate: false,
+      fit: false,
+      randomize: false,
+      numIter: 200,
+      idealEdgeLength: 60,
+      nodeRepulsion: 2000,
+      gravity: 0,
     }
 
     const cy = cytoscape({
@@ -236,6 +275,13 @@ export default function GraphCanvas({ graphData, onNodeSelect, searchQuery, type
     })
     cyRef.current = cy
     collapsedSetsRef.current = new Map()
+
+    // Runs once after the initial concentric layout (set via the
+    // `layout` option above) finishes, to fix stray same-ring
+    // positioning — see this file's top docstring.
+    cy.one('layoutstop', () => {
+      cy.layout(refinementLayoutOptions).run()
+    })
 
     if (mainEntityId) cy.$id(mainEntityId).addClass('main-suspect')
 
@@ -264,7 +310,7 @@ export default function GraphCanvas({ graphData, onNodeSelect, searchQuery, type
       setTooltip({
         x: pos.x,
         y: pos.y,
-        lines: [node.data('label'), `type: ${node.data('entity_type')}`],
+        lines: [node.data('label'), `type: ${node.data('entity_type')}`, ...(node.data('needsReview') ? ['needs review'] : [])],
       })
     })
     cy.on('mouseover', 'edge', (evt) => {
@@ -329,7 +375,15 @@ export default function GraphCanvas({ graphData, onNodeSelect, searchQuery, type
           nodesToHide.remove()
         })
       })
-      cy.layout(centeredLayoutOptions).run()
+      // Re-run concentric after collapsing hubs (node count/degrees
+      // changed), then chain the same refinement pass so the
+      // post-collapse layout doesn't have the same stray-positioning
+      // issue as the initial one.
+      const collapseLayout = cy.layout(centeredLayoutOptions)
+      collapseLayout.one('layoutstop', () => {
+        cy.layout(refinementLayoutOptions).run()
+      })
+      collapseLayout.run()
     })
 
     return () => cy.destroy()

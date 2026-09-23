@@ -22,15 +22,30 @@
 const BASE_URL = '/api'
 const TOKEN_KEY = 'cna_auth_token'
 
-/** Read the current session token from localStorage, or null. */
+/**
+ * Read the current session token, or null. Checks localStorage first
+ * (a "remembered" session), then sessionStorage (a session that was
+ * deliberately not remembered — see setToken below), so either kind
+ * of stored session is picked up the same way.
+ */
 export function getToken() {
-  return localStorage.getItem(TOKEN_KEY)
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY)
 }
 
-/** Store (or clear, if token is falsy) the session token. */
-function setToken(token) {
-  if (token) localStorage.setItem(TOKEN_KEY, token)
-  else localStorage.removeItem(TOKEN_KEY)
+/**
+ * Store (or clear, if token is falsy) the session token.
+ * `remember` picks WHERE it's stored: localStorage survives closing
+ * the browser, sessionStorage clears when it closes. Always clears
+ * both first so switching between a remembered and a not-remembered
+ * login never leaves a stale copy of the token behind in the other
+ * one.
+ */
+function setToken(token, remember = true) {
+  localStorage.removeItem(TOKEN_KEY)
+  sessionStorage.removeItem(TOKEN_KEY)
+  if (token) {
+    (remember ? localStorage : sessionStorage).setItem(TOKEN_KEY, token)
+  }
 }
 
 /**
@@ -127,14 +142,42 @@ async function requestFileDownload(path, { method = 'GET', body, filename } = {}
 }
 
 export const api = {
-  /** Log in and persist the returned session token. */
-  async login(badgeId, password) {
+  /**
+   * Log in and persist the returned session token. `remember`
+   * (default true) controls WHERE it's persisted — true keeps the
+   * session across browser restarts (localStorage), false clears it
+   * when the browser closes (sessionStorage) — see LoginForm.jsx's
+   * "Remember me" checkbox.
+   */
+  async login(badgeId, password, remember = true) {
     const data = await request('/auth/login', {
       method: 'POST',
       body: { badge_id: badgeId, password },
     })
-    setToken(data.token)
+    setToken(data.token, remember)
     return data
+  },
+
+  /**
+   * Resolve the current session token back into { name, role, id,
+   * badge_id, agency_id } (see api/main.py's GET /auth/me). Used to
+   * restore a real session on page load instead of a role-less
+   * placeholder — see App.jsx.
+   */
+  me() {
+    return request('/auth/me')
+  },
+
+  /**
+   * Change the current user's own password (see
+   * api/auth.py's change_password_endpoint). Throws with a 401 if
+   * currentPassword is wrong, or a 400 if newPassword is too short.
+   */
+  changePassword(currentPassword, newPassword) {
+    return request('/auth/change-password', {
+      method: 'POST',
+      body: { current_password: currentPassword, new_password: newPassword },
+    })
   },
 
   /** Invalidate the session server-side (best-effort) and clear it locally. */
@@ -171,14 +214,47 @@ export const api = {
     return request('/cases/')
   },
 
-  /** Create a new case with the given title (see api/routes/cases.py). */
-  createCase(title) {
-    return request('/cases/', { method: 'POST', body: { title } })
+  /** Create a new case with the given title and description (see api/routes/cases.py). */
+  createCase(title, description) {
+    return request('/cases/', { method: 'POST', body: { title, description } })
   },
 
-  /** Fetch a case's graph (currently 501 until graph.build exists — see App.jsx's sample-data fallback). */
+  /**
+   * Fetch a case's graph (see api/routes/query.py — builds a real
+   * graph from persisted entities/relationships, or throws a 501,
+   * surfaced here as err.pending, if the case has no entities yet).
+   */
   queryCase(caseId) {
     return request(`/query/${encodeURIComponent(caseId)}`)
+  },
+
+  /**
+   * Entity-resolution review workflow (api/routes/query.py). An investigator
+   * can split a wrong merge ("never_merge") or confirm a missed one
+   * ("force_merge") on two entity mentions; the graph is rebuilt on the
+   * next queryCase.
+   */
+  listResolutionOverrides(caseId) {
+    return request(`/query/${encodeURIComponent(caseId)}/resolution/overrides`)
+  },
+  addResolutionOverride(caseId, mentionAId, mentionBId, action, note) {
+    return request(`/query/${encodeURIComponent(caseId)}/resolution/overrides`, {
+      method: 'POST',
+      body: { mention_a_id: mentionAId, mention_b_id: mentionBId, action, note },
+    })
+  },
+  deleteResolutionOverride(caseId, overrideId) {
+    return request(
+      `/query/${encodeURIComponent(caseId)}/resolution/overrides/${encodeURIComponent(overrideId)}`,
+      { method: 'DELETE' },
+    )
+  },
+
+  /** Admin-only audit log (api/routes/audit.py). */
+  getAuditLog({ limit = 100, offset = 0, action } = {}) {
+    const q = new URLSearchParams({ limit, offset })
+    if (action) q.set('action', action)
+    return request(`/audit/?${q.toString()}`)
   },
 
   /** Fetch the evidence trail for a selected entity. */
@@ -258,5 +334,184 @@ export const api = {
       method: 'PUT',
       body: patch,
     })
+  },
+
+  /**
+   * Cross-case entity match panel (see api/routes/cross_case.py) —
+   * for every entity in this case, matches found in cases the viewer
+   * is NOT already authorized to see. Each match's other_case is
+   * confidentiality-gated: a "restricted" case includes only
+   * agency_name, no title/description. Returns { matches: [...] }.
+   */
+  getCrossCaseMatches(caseId) {
+    return request(`/cases/${encodeURIComponent(caseId)}/cross-case-matches`)
+  },
+
+  /**
+   * Raise an access request from a cross-case match (see
+   * api/routes/cross_case.py's request-access endpoint). `caseId` and
+   * `matchedEntityId` identify the match this request came from, for
+   * the requester's own audit trail; `targetCaseId` is the actual
+   * case being requested (other_case.case_id from getCrossCaseMatches).
+   */
+  requestCrossCaseAccess(caseId, matchedEntityId, targetCaseId, reason) {
+    return request(
+      `/cases/${encodeURIComponent(caseId)}/cross-case-matches/${encodeURIComponent(matchedEntityId)}/request-access`,
+      { method: 'POST', body: { target_case_id: targetCaseId, reason } }
+    )
+  },
+
+  /**
+   * Access requests currently awaiting the current user's decision,
+   * as an assigned investigator on the target case (see
+   * api/routes/access_requests.py). Returns { requests: [...] }.
+   */
+  getPendingAccessRequestsForMe() {
+    return request('/access-requests/pending/mine')
+  },
+
+  /**
+   * Access requests escalated to admin review — ADMIN/SUPER_ADMIN
+   * only (see api/routes/access_requests.py). Returns { requests: [...] }.
+   */
+  getPendingAccessRequestsForAdmin() {
+    return request('/access-requests/pending/admin')
+  },
+
+  /** Every access request (any status) raised against a case. */
+  getAccessRequestsForCase(caseId) {
+    return request(`/access-requests/case/${encodeURIComponent(caseId)}`)
+  },
+
+  /**
+   * Approve an access request — callable by the target case's
+   * assigned investigator while pending_investigator, or by an
+   * admin once escalated to pending_admin (see
+   * api/routes/access_requests.py).
+   */
+  approveAccessRequest(requestId) {
+    return request(`/access-requests/${encodeURIComponent(requestId)}/approve`, { method: 'POST' })
+  },
+
+  /**
+   * Deny an access request. At pending_investigator this escalates
+   * to pending_admin rather than closing the request (see
+   * schema/access_request.py's lifecycle docstring); at
+   * pending_admin it is final. `note` is optional context shown to
+   * the requester.
+   */
+  denyAccessRequest(requestId, note) {
+    return request(`/access-requests/${encodeURIComponent(requestId)}/deny`, {
+      method: 'POST',
+      body: { note },
+    })
+  },
+
+  /**
+   * Set a case's confidentiality tier ("normal" or "restricted") —
+   * ADMIN/SUPER_ADMIN only (see api/routes/cases.py).
+   */
+  setCaseConfidentiality(caseId, confidentiality) {
+    return request(`/cases/${encodeURIComponent(caseId)}/confidentiality`, {
+      method: 'POST',
+      body: { confidentiality },
+    })
+  },
+
+  /**
+   * Set a case's lifecycle status ("open", "under_review", or
+   * "closed") — callable by an investigator assigned to the case, or
+   * by an ADMIN/SUPER_ADMIN (see api/routes/cases.py's status
+   * endpoint). Unlike setCaseConfidentiality, this is NOT admin-only.
+   */
+  setCaseStatus(caseId, status) {
+    return request(`/cases/${encodeURIComponent(caseId)}/status`, {
+      method: 'POST',
+      body: { status },
+    })
+  },
+
+  /**
+   * Add an investigator to a case, by their internal user_id (NOT
+   * badge_id — see lookupUserByBadgeId, which resolves one to the
+   * other) — ADMIN/SUPER_ADMIN only (see api/routes/cases.py's
+   * assign endpoint).
+   */
+  assignInvestigator(caseId, userId) {
+    return request(`/cases/${encodeURIComponent(caseId)}/assign`, {
+      method: 'POST',
+      body: { user_id: userId },
+    })
+  },
+
+  /**
+   * Remove an investigator from a case, by their internal user_id —
+   * ADMIN/SUPER_ADMIN only (see api/routes/cases.py's unassign
+   * endpoint). Rejected by the backend if userId is the case's last
+   * remaining investigator.
+   */
+  unassignInvestigator(caseId, userId) {
+    return request(`/cases/${encodeURIComponent(caseId)}/unassign`, {
+      method: 'POST',
+      body: { user_id: userId },
+    })
+  },
+
+  /**
+   * Resolve a badge ID to the user's internal id/name/agency/role —
+   * ADMIN/SUPER_ADMIN only (see api/routes/users.py). There's no
+   * general user-listing endpoint in this project, so the Admin
+   * page's "assign investigator" flow looks a badge ID up one at a
+   * time rather than offering a dropdown of every user.
+   */
+  lookupUserByBadgeId(badgeId) {
+    return request(`/users/lookup/${encodeURIComponent(badgeId)}`)
+  },
+
+  /**
+   * Create a new account — ADMIN/SUPER_ADMIN only (see
+   * api/routes/users.py's create endpoint). An ADMIN may only create
+   * investigator/analyst accounts in their own agency; SUPER_ADMIN
+   * may create any role in any agency (agencyId optional, defaults
+   * to the caller's own).
+   */
+  createUser(name, badgeId, password, role, agencyId) {
+    const body = { name, badge_id: badgeId, password, role }
+    if (agencyId) body.agency_id = agencyId
+    return request('/users/', { method: 'POST', body })
+  },
+
+  /**
+   * Resolve an internal user_id back to a user's name/badge_id/role —
+   * ADMIN/SUPER_ADMIN only (see api/routes/users.py). Used to show
+   * readable names for a case's assigned_investigator_ids, which are
+   * raw user_ids.
+   */
+  getUserById(userId) {
+    return request(`/users/${encodeURIComponent(userId)}`)
+  },
+
+  /**
+   * Walk the entire hash-chained integrity ledger and recompute every
+   * entry's hash (see ledger/chain.py, api/routes/ledger.py). Returns
+   * { valid, entries_checked, first_broken_sequence_number, detail }.
+   */
+  verifyLedger() {
+    return request('/ledger/verify')
+  },
+
+  /** Every ledger entry, in order. Returns { entries: [...] }. */
+  getLedgerEntries() {
+    return request('/ledger/entries')
+  },
+
+  /**
+   * Likely-but-unrecorded relationships within a case's own graph
+   * (graph.analytics.compute_link_predictions via api/routes/query.py)
+   * — a structural lead for an investigator to manually verify, not
+   * an automatic edge. Returns { caseId, predictions: [...] }.
+   */
+  getLinkPredictions(caseId, topN = 10) {
+    return request(`/query/${encodeURIComponent(caseId)}/link-predictions?top_n=${topN}`)
   },
 }

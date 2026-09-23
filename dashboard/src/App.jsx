@@ -1,11 +1,17 @@
 /**
  * dashboard/src/App.jsx
  *
- * New sidebar-nav shell (see SIH26189_Project_Notes.md Section 12/17
+ * New sidebar-nav shell (see SUTRA_Project_Notes.md Section 12/17
  * "sidebar-nav mockup direction"). Replaces the old dark-theme top-bar
  * layout, keeping the same real data flow: login gate, case selection,
- * api.queryCase with the sample-data fallback for the not-yet-built
- * graph pipeline (api/routes/query.py's 501).
+ * api.queryCase against the real per-case graph.
+ *
+ * A 501 from api.queryCase (api/routes/query.py: authorized, but this
+ * case has no persisted entities/relationships yet) renders as an
+ * honest empty graph for that case — NOT the old SAMPLE_GRAPH demo
+ * dataset. A brand-new case must never appear to already contain a
+ * network; usingSampleData is kept as a prop/flag for any future,
+ * deliberately-triggered demo mode, but nothing currently sets it true.
  *
  * Role enforcement (Section 13): Analyst is cross-case READ-ONLY. The
  * backend already enforces this (schema.user.Role.ANALYST has no edit
@@ -15,40 +21,91 @@
  * "open new case" action are hidden for analyst/investigator-only
  * actions are hidden when session.role === 'analyst', so the UI
  * doesn't dangle affordances a backend call would just reject anyway.
+ * The Admin page (pages/Admin.jsx) is gated the same way, in reverse
+ * (admin/super_admin only).
+ *
+ * Session restore: a stored token is resolved back into a real
+ * session via api.me() (GET /auth/me) rather than a role-less
+ * `{ restored: true }` placeholder — that placeholder used to make
+ * role-gated UI (the Admin nav item, the Analyst read-only banner)
+ * disappear or misbehave until the next full login.
  */
 
 import { AlertTriangle, Share2, ShieldAlert, ShieldCheck, Users } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { api, getToken } from './api/client'
-import { SAMPLE_GRAPH } from './sampleData'
 import Sidebar from './components/Sidebar'
 import TopBar from './components/TopBar'
 import CaseSelector from './components/CaseSelector'
+import CaseStatusControl from './components/CaseStatusControl'
 import EvidencePanel from './components/EvidencePanel'
 import ErrorBoundary from './components/ErrorBoundary'
 import LoginForm from './components/LoginForm'
-import Dashboard from './pages/Dashboard'
-import NetworkGraph from './pages/NetworkGraph'
-import SearchInvestigate from './pages/SearchInvestigate'
-import DataSources from './pages/DataSources'
-import Reports from './pages/Reports'
-import SettingsPage from './pages/Settings'
+
+// Lazy-loaded: each page (and its dependencies, e.g. NetworkGraph's
+// cytoscape) becomes its own chunk, fetched on first navigation to it
+// instead of being bundled into the initial load. See Suspense fallback
+// in renderPage() below for the loading state.
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const NetworkGraph = lazy(() => import('./pages/NetworkGraph'))
+const SearchInvestigate = lazy(() => import('./pages/SearchInvestigate'))
+const CrossCaseMatches = lazy(() => import('./pages/CrossCaseMatches'))
+const LedgerIntegrity = lazy(() => import('./pages/LedgerIntegrity'))
+const DataSources = lazy(() => import('./pages/DataSources'))
+const Reports = lazy(() => import('./pages/Reports'))
+const SettingsPage = lazy(() => import('./pages/Settings'))
+const Admin = lazy(() => import('./pages/Admin'))
 
 const READ_ONLY_ROLES = new Set(['analyst'])
+const ADMIN_ROLES = new Set(['admin', 'super_admin'])
 
 export default function App() {
   const [session, setSession] = useState(null)
   const [activePage, setActivePage] = useState('dashboard')
   const [selectedCaseId, setSelectedCaseId] = useState(null)
   const [caseData, setCaseData] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0) // bump to rebuild the graph after a resolution override
   const [caseLoading, setCaseLoading] = useState(false)
   const [usingSampleData, setUsingSampleData] = useState(false)
   const [loadError, setLoadError] = useState(null)
   const [selectedEntityId, setSelectedEntityId] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [notificationCount, setNotificationCount] = useState(0)
+
+  const refreshNotifications = useCallback(() => {
+    if (!session) return
+    const calls = [api.getPendingAccessRequestsForMe()]
+    if (ADMIN_ROLES.has(session.role)) calls.push(api.getPendingAccessRequestsForAdmin())
+    Promise.all(calls)
+      .then((results) => setNotificationCount(results.reduce((sum, r) => sum + (r.requests?.length || 0), 0)))
+      .catch(() => {
+        // Best-effort — the bell just stays at its last known count.
+      })
+  }, [session])
+
+  // Refresh on login/session-restore, and again whenever the person
+  // visits a page where they might resolve one of these requests, so
+  // the bell doesn't stay stuck at a stale count.
+  useEffect(() => {
+    refreshNotifications()
+  }, [refreshNotifications, activePage])
 
   useEffect(() => {
-    if (getToken()) setSession({ restored: true })
+    if (!getToken()) return
+    let cancelled = false
+    api
+      .me()
+      .then((data) => {
+        if (!cancelled) setSession(data)
+      })
+      .catch(() => {
+        // Stored token is expired/invalid server-side — drop back to
+        // the login screen rather than a half-restored session.
+        if (!cancelled) api.logout()
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useEffect(() => {
@@ -68,8 +125,16 @@ export default function App() {
       .catch((err) => {
         if (cancelled) return
         if (err.pending) {
-          setCaseData(SAMPLE_GRAPH)
-          setUsingSampleData(true)
+          // 501 from api/routes/query.py: authorized, but this case has
+          // no persisted entities/relationships yet. Show an honest
+          // empty graph for *this* case rather than the SAMPLE_GRAPH
+          // demo dataset — a new case must never appear to already
+          // contain a network. (Cross-case entity linking — showing
+          // this case's graph pulling in entities shared with other
+          // cases — is a separate, not-yet-built feature; see project
+          // notes / learnings for that design discussion.)
+          setCaseData({ caseId: selectedCaseId, nodes: [], edges: [], stats: { entitiesLinked: 0, keyInfluencers: 0, flaggedPatterns: 0 }, influencer: null })
+          setUsingSampleData(false)
           setLoadError(null)
         } else {
           setLoadError(err.message)
@@ -82,7 +147,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [session, selectedCaseId])
+  }, [session, selectedCaseId, reloadKey])
 
   if (!session) {
     return (
@@ -95,7 +160,7 @@ export default function App() {
                 <ShieldCheck size={22} strokeWidth={2.3} />
               </span>
               <div>
-                <h1>Criminal Network Analysis</h1>
+                <h1>SUTRA</h1>
                 <p className="login-shell-tagline">Smarter Insights, Safer Communities.</p>
               </div>
             </div>
@@ -155,10 +220,15 @@ export default function App() {
             searchQuery={searchQuery}
             selectedEntityId={selectedEntityId}
             onNodeSelect={setSelectedEntityId}
+            selectedCaseId={selectedCaseId}
           />
         )
       case 'search':
         return <SearchInvestigate graphData={caseData} onSelectEntity={setSelectedEntityId} />
+      case 'cross-case':
+        return <CrossCaseMatches session={session} selectedCaseId={selectedCaseId} />
+      case 'ledger':
+        return <LedgerIntegrity />
       case 'sources':
         return isReadOnly ? (
           <div className="page-sources">
@@ -170,6 +240,15 @@ export default function App() {
         )
       case 'reports':
         return <Reports selectedCaseId={selectedCaseId} />
+      case 'admin':
+        return ADMIN_ROLES.has(session.role) ? (
+          <Admin selectedCaseId={selectedCaseId} session={session} />
+        ) : (
+          <div className="page-admin">
+            <h1>Admin</h1>
+            <p className="page-sub">This page is restricted to Admin and Super Admin accounts.</p>
+          </div>
+        )
       case 'settings':
         return <SettingsPage session={session} />
       default:
@@ -179,12 +258,13 @@ export default function App() {
 
   return (
     <div className="app-shell-v2">
-      <Sidebar activePage={activePage} onNavigate={setActivePage} />
+      <Sidebar activePage={activePage} onNavigate={setActivePage} role={session.role} />
       <div className="app-shell-v2-main">
-        <TopBar session={session} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={1} />
+        <TopBar session={session} searchQuery={searchQuery} onSearchChange={setSearchQuery} notificationCount={notificationCount} />
 
         <div className="app-shell-v2-toolbar">
           <CaseSelector selectedCaseId={selectedCaseId} onSelectCase={setSelectedCaseId} />
+          <CaseStatusControl selectedCaseId={selectedCaseId} session={session} />
           {isReadOnly && <span className="readonly-badge">Read-only access</span>}
           <button
             type="button"
@@ -209,13 +289,21 @@ export default function App() {
 
         <main className="app-shell-v2-content">
           <ErrorBoundary resetKey={activePage} label={activePage}>
-            {renderPage()}
+            <Suspense fallback={<div className="page-loading">Loading…</div>}>
+              {renderPage()}
+            </Suspense>
           </ErrorBoundary>
         </main>
 
         {activePage === 'dashboard' && selectedEntityId && (
           <div className="evidence-drawer">
-            <EvidencePanel selectedEntityId={selectedEntityId} />
+            <EvidencePanel
+              selectedEntityId={selectedEntityId}
+              node={caseData?.nodes?.find((n) => n.id === selectedEntityId) || null}
+              caseId={selectedCaseId}
+              canEdit={session.role === 'investigator' || session.role === 'super_admin'}
+              onResolutionChanged={() => setReloadKey((k) => k + 1)}
+            />
           </div>
         )}
       </div>

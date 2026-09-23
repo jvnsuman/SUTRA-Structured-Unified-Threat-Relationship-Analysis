@@ -6,6 +6,12 @@
  * user's name (Investigator / Analyst / Admin / Super Admin — see
  * schema.user.Role) so the role scoping from Section 13 is always
  * visible, not just enforced silently server-side.
+ *
+ * notificationCount is a real count of pending access requests
+ * awaiting this person's decision (App.jsx's refreshNotifications —
+ * see api.getPendingAccessRequestsForMe/ForAdmin), not a hardcoded
+ * placeholder — the bell only lights up when there's actually
+ * something to act on.
  */
 
 import { Bell, Search } from 'lucide-react'
@@ -36,7 +42,11 @@ export default function TopBar({ session, searchQuery, onSearchChange, notificat
       </div>
 
       <div className="topbar-right">
-        <button type="button" className="topbar-bell" aria-label="Notifications">
+        <button
+          type="button"
+          className="topbar-bell"
+          aria-label={notificationCount > 0 ? `Notifications (${notificationCount} pending)` : 'Notifications'}
+        >
           <Bell size={18} />
           {notificationCount > 0 && <span className="topbar-bell-dot" />}
         </button>

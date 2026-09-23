@@ -77,7 +77,7 @@ export default function Dashboard({ session, graphData, caseLoading, usingSample
       <div className="page-greeting">
         <div>
           <h1>Good Morning, {firstName}</h1>
-          <p className="page-greeting-sub">Here&apos;s what&apos;s happening with the criminal network analysis system today.</p>
+          <p className="page-greeting-sub">Here&apos;s what&apos;s happening with SUTRA today.</p>
         </div>
         <div className="page-greeting-right">
           <span className="page-greeting-date">{today} · {time}</span>

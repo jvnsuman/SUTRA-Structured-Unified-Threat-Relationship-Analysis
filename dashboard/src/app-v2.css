@@ -514,3 +514,421 @@
 .toast-success { border-color: #bbf0d8; color: var(--success); }
 .toast-error { border-color: #fbcaca; color: var(--danger); }
 .toast-info { border-color: var(--border-strong); color: var(--text); }
+
+
+/* --- New Case modal (uses design tokens from theme.css) --- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: modal-backdrop-fade 0.12s ease-out;
+}
+
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-raised);
+  border: 1px solid var(--border);
+  width: 100%;
+  max-width: 440px;
+  animation: modal-pop-in 0.14s ease-out;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  margin: 0;
+  color: var(--text);
+}
+
+.modal-close-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition), color var(--transition);
+}
+
+.modal-close-button:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+
+.modal-close-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-field label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.required-marker {
+  color: var(--danger);
+}
+
+.form-field input,
+.form-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--text);
+  background: var(--surface);
+  resize: vertical;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.form-field textarea {
+  min-height: 96px;
+}
+
+.form-field input::placeholder,
+.form-field textarea::placeholder {
+  color: var(--text-faint);
+}
+
+.form-field input:focus,
+.form-field textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-tint);
+}
+
+.form-field input[aria-invalid='true'],
+.form-field textarea[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+
+.field-footer {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 0.75rem;
+}
+
+.field-error {
+  color: var(--danger);
+}
+
+.field-hint {
+  color: var(--text-faint);
+}
+
+.char-count {
+  color: var(--text-faint);
+  margin-left: auto;
+}
+
+.modal-server-error {
+  background: var(--danger-tint);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.button-secondary,
+.button-primary {
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.button-secondary {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.button-secondary:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+
+.button-primary {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.button-primary:hover:not(:disabled) {
+  background: var(--primary-dark);
+}
+
+.button-primary:disabled,
+.button-secondary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- New Case button (small polish, matches primary brand color) --- */
+
+.new-case-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: #ffffff;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.new-case-button:hover {
+  background: var(--primary-dark);
+}
+
+.new-case-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@keyframes modal-backdrop-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-pop-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ---------- Cross-Case Matches page ---------- */
+
+.page-cross-case .panel { margin-bottom: 16px; }
+
+.cross-case-match-list { display: flex; flex-direction: column; gap: 14px; }
+
+.cross-case-match-card { display: flex; flex-direction: column; gap: 14px; }
+
+.cross-case-match-entity {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+.cross-case-match-entity strong { font-size: 14px; color: var(--text); }
+.cross-case-match-score {
+  margin-left: auto; font-size: 11.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--surface-sunken);
+  padding: 3px 9px; border-radius: 999px;
+}
+
+.cross-case-match-other-case { font-size: 13px; }
+.cross-case-match-other-title { font-size: 13.5px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.cross-case-match-other-description { color: var(--text-muted); margin-bottom: 8px; line-height: 1.5; }
+.cross-case-match-agency {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-faint);
+}
+
+.cross-case-restricted-notice {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: var(--danger-tint); color: var(--danger);
+  border: 1px solid var(--danger); border-radius: var(--radius-sm);
+  padding: 12px 14px; font-size: 12.5px; line-height: 1.5;
+}
+.cross-case-restricted-notice strong { color: inherit; }
+.cross-case-restricted-notice svg { flex-shrink: 0; margin-top: 1px; }
+
+.cross-case-request-form {
+  display: flex; flex-direction: column; gap: 10px;
+  border-top: 1px solid var(--border); padding-top: 12px;
+}
+.cross-case-request-form textarea {
+  width: 100%; box-sizing: border-box; resize: vertical;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 8px 10px; font-size: 13px; font-family: inherit; color: var(--text);
+  background: var(--surface);
+}
+.cross-case-request-form textarea:focus {
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint);
+}
+.cross-case-request-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.pending-request-list { list-style: none; margin: 0; padding: 0; }
+.pending-request-item {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; padding: 12px 0; border-top: 1px solid var(--border);
+}
+.pending-request-item:first-child { border-top: none; padding-top: 0; }
+.pending-request-item strong { font-size: 13px; color: var(--text); }
+.pending-request-reason { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; max-width: 480px; line-height: 1.5; }
+.pending-request-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+/* ---------- Integrity Ledger page ---------- */
+
+.page-ledger .panel { margin-bottom: 16px; }
+
+.ledger-verify-panel { display: flex; flex-direction: column; gap: 14px; }
+.ledger-verify-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.ledger-verify-header h3 { font-size: 14px; margin-bottom: 4px; }
+
+.ledger-verify-result {
+  display: flex; align-items: flex-start; gap: 10px;
+  border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px;
+}
+.ledger-verify-result p { margin-top: 4px; color: inherit; opacity: 0.9; line-height: 1.5; }
+.ledger-verify-ok { background: var(--success-tint); color: var(--success); }
+.ledger-verify-broken { background: var(--danger-tint); color: var(--danger); }
+
+.ledger-entry-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ledger-entry-table th {
+  text-align: left; font-weight: 600; color: var(--text-muted);
+  padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.ledger-entry-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+.ledger-entry-table tr:last-child td { border-bottom: none; }
+.ledger-hash-cell { font-family: 'SFMono-Regular', Consolas, monospace; color: var(--text-faint); }
+
+.spin { animation: spin 0.8s linear infinite; }
+
+/* ---------- Suggested Links panel (NetworkGraph page) ---------- */
+
+.link-predictions-panel { margin-top: 16px; }
+.link-predictions-sub { margin-bottom: 10px; }
+
+.link-prediction-list { list-style: none; margin: 0; padding: 0; }
+.link-prediction-item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); font-size: 13px;
+}
+.link-prediction-item:first-child { border-top: none; padding-top: 0; }
+.link-prediction-shared {
+  font-size: 11.5px; color: var(--text-muted); background: var(--surface-sunken);
+  padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+}
+/* ---------- Admin page ---------- */
+
+.page-admin .panel { margin-bottom: 16px; }
+.page-admin .panel-note { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; margin: 0 0 12px; }
+.page-admin .panel-note strong { color: var(--text); }
+
+.admin-tier-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.admin-lookup-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 4px; }
+.admin-lookup-form label {
+  display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-muted);
+}
+.admin-lookup-form input[type="text"] {
+  width: 220px; box-sizing: border-box;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 8px 10px; font-size: 13px; font-family: inherit; color: var(--text);
+  background: var(--surface);
+}
+.admin-lookup-form input[type="text"]:focus {
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint);
+}
+
+.admin-lookup-result {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; padding: 12px 0 0; border-top: 1px solid var(--border); margin-top: 12px;
+}
+.admin-lookup-result strong { font-size: 13px; color: var(--text); }
+
+/* ---------- Case status control (toolbar) ---------- */
+
+.case-status-pill {
+  font-size: 11.5px; font-weight: 600; padding: 5px 10px; border-radius: 999px;
+  text-transform: capitalize; white-space: nowrap;
+}
+.case-status-select { padding: 6px 10px; font-size: 12.5px; text-transform: capitalize; }
+.case-status-open { background: var(--success-tint); color: var(--success); }
+.case-status-under_review { background: var(--amber-tint); color: var(--amber); }
+.case-status-closed { background: var(--surface-sunken); color: var(--text-muted); }
+
+/* ---------- Access request history (Cross-Case Matches page) ---------- */
+
+.access-request-status { font-size: 12.5px; text-transform: capitalize; }
+.access-request-status.status-approved { color: var(--success); }
+.access-request-status.status-denied { color: var(--danger); }
+.access-request-status.status-pending_investigator,
+.access-request-status.status-pending_admin { color: var(--amber); }
+
+/* ---------- Change Password (Settings page) ---------- */
+
+.change-password-form { display: flex; flex-direction: column; gap: 12px; max-width: 320px; }
+.change-password-form label {
+  display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; color: var(--text-muted);
+}
+.change-password-form input[type="password"] {
+  box-sizing: border-box;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  padding: 8px 10px; font-size: 13px; font-family: inherit; color: var(--text);
+  background: var(--surface);
+}
+.change-password-form input[type="password"]:focus {
+  outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-tint);
+}
+.change-password-form .btn-primary { align-self: flex-start; }
+
+
+/* ---- entity-resolution review (EvidencePanel) ---- */
+.resolution-details { margin: 8px 0 12px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; font-size: 12.5px; }
+.resolution-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.resolution-conf { color: #475569; font-variant-numeric: tabular-nums; }
+.resolution-conf.is-review { color: #b45309; font-weight: 600; }
+.resolution-review { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; color: #b45309; }
+.resolution-aliases { margin: 6px 0 0; color: #334155; }
+.resolution-reasons { margin: 6px 0 0; padding-left: 18px; color: #475569; }
+.resolution-members { margin-top: 8px; }
+.resolution-members summary { cursor: pointer; color: #334155; }
+.resolution-members ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.resolution-members li { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid #eef2f7; }
+.resolution-members li .btn-link { white-space: nowrap; }
+.resolution-member-text { overflow-wrap: anywhere; }
+.resolution-member-doc, .evidence-item-id { color: #94a3b8; font-size: 11px; margin-left: 6px; }
+.btn-link { background: none; border: none; color: #b91c1c; cursor: pointer; padding: 0; font-size: 11.5px; display: inline-flex; align-items: center; gap: 4px; }
+.btn-link:disabled { opacity: .5; cursor: default; }
+
+/* ---- audit log (Admin) ---- */
+.audit-controls { display: flex; gap: 8px; margin: 10px 0; }
+.audit-table-wrap { max-height: 360px; overflow: auto; }
+.audit-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.audit-table th, .audit-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eef2f7; white-space: nowrap; }
+.audit-table tr.audit-failed td { color: #b91c1c; }

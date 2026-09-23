@@ -5,6 +5,9 @@
  * preferences are now real: backed by GET/PUT /settings/
  * (api/routes/settings.py), stored as a JSON blob on the user's row.
  * Each toggle flips its own key optimistically and reverts on error.
+ * Change Password is backed by POST /auth/change-password
+ * (api/auth.py's change_password_endpoint) — self-service, requires
+ * the current password.
  */
 
 import { AlertCircle } from 'lucide-react'
@@ -22,6 +25,73 @@ const TOGGLES = [
 function initials(name) {
   if (!name) return '?'
   return name.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()
+}
+
+function ChangePasswordPanel() {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [saving, setSaving] = useState(false)
+  const showToast = useToast()
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (next !== confirm) {
+      showToast("New password and confirmation don't match.", 'error')
+      return
+    }
+    setSaving(true)
+    try {
+      await api.changePassword(current, next)
+      showToast('Password changed.', 'success')
+      setCurrent('')
+      setNext('')
+      setConfirm('')
+    } catch (err) {
+      showToast(err.message, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="panel">
+      <div className="panel-header">
+        <h3>Change Password</h3>
+      </div>
+      <form className="change-password-form" onSubmit={handleSubmit}>
+        <label>
+          Current password
+          <input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} required disabled={saving} />
+        </label>
+        <label>
+          New password
+          <input
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            required
+            minLength={8}
+            disabled={saving}
+          />
+        </label>
+        <label>
+          Confirm new password
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            required
+            minLength={8}
+            disabled={saving}
+          />
+        </label>
+        <button type="submit" className="btn-primary" disabled={saving}>
+          {saving ? 'Saving...' : 'Change Password'}
+        </button>
+      </form>
+    </div>
+  )
 }
 
 export default function SettingsPage({ session }) {
@@ -98,6 +168,8 @@ export default function SettingsPage({ session }) {
             ))}
           </ul>
         </div>
+
+        <ChangePasswordPanel />
       </div>
     </div>
   )
