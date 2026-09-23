@@ -10,16 +10,14 @@ and db/repository.py for persistence.
 Kept separate from schema/case.py: a Report is a derived, disposable
 artifact generated from a case's state, not part of the case itself.
 
-There is deliberately no PDF format here — that would need an extra
-rendering dependency (e.g. reportlab/weasyprint) not in
-requirements.txt. Markdown and CSV cover the same underlying data
-with the stdlib alone.
+PDF (reportlab) is stored base64-encoded in `content`, since the column
+is text; api/routes/reports.py decodes it on download.
 """
 
 from dataclasses import dataclass
 from typing import Optional
 
-VALID_REPORT_FORMATS = frozenset({"markdown", "csv"})
+VALID_REPORT_FORMATS = frozenset({"markdown", "csv", "pdf"})
 
 
 @dataclass
