@@ -12,7 +12,7 @@ import uuid
 import pytest
 
 from data.generate_synthetic import generate_synthetic_cdr, generate_synthetic_financial_record
-from graph.analytics import compute_community_detection, compute_full_centrality_suite, detect_anomalies
+from graph.analytics import compute_community_detection, compute_full_centrality_suite, compute_link_predictions, detect_anomalies
 from graph.build import build_graph, compute_centrality, get_evidence_trail, highlight_influencer
 from graph.explainability import get_evidence_trail as get_linked_evidence
 from graph.explainability import link_evidence
@@ -120,5 +120,72 @@ def test_link_evidence_is_idempotent():
     assert len(get_linked_evidence("entity-456")) == 1
 
 
+def test_link_evidence_return_value_distinguishes_new_from_repeat():
+    """link_evidence returns True only the first time a given
+    (entity_id, document.id) pair is linked — api/routes/query.py
+    relies on this to decide whether to append a ledger entry
+    (ledger/chain.py), so a repeat query doesn't re-log the same
+    evidence-linking event on every page load.
+    """
+    doc = SourceDocument(id="D-return-value-check", document_type="fir", raw_text="text")
+    first_call = link_evidence("entity-return-value-check", doc)
+    second_call = link_evidence("entity-return-value-check", doc)
+    assert first_call is True
+    assert second_call is False
+
+
 def test_get_evidence_trail_empty_for_unknown_entity():
     assert get_linked_evidence("never-linked-entity") == []
+
+
+def test_compute_link_predictions_ranks_shared_neighbor_pairs_highest():
+    """Regression test for a real bug: passing nx.non_edges(...) as a
+    raw generator into nx.adamic_adar_index silently returns an empty
+    result (verified empirically — its @nx._dispatchable decorator
+    appears to consume the generator before computing). This test
+    fails loudly if that materialize-to-a-list fix is ever reverted.
+    """
+    import networkx as nx
+
+    g = nx.MultiDiGraph()
+    for node in ["A", "B", "C", "D", "E"]:
+        g.add_node(node)
+    g.add_edge("A", "C", relation_type="calls")
+    g.add_edge("B", "C", relation_type="calls")
+    g.add_edge("A", "D", relation_type="transacts-with")
+    g.add_edge("B", "D", relation_type="transacts-with")
+    g.add_edge("E", "A", relation_type="calls")
+
+    predictions = compute_link_predictions(g, top_n=5)
+
+    assert len(predictions) > 0, "compute_link_predictions returned nothing — check the nx.non_edges generator fix"
+    top = predictions[0]
+    assert {top["entity_a_id"], top["entity_b_id"]} == {"A", "B"}
+    assert set(top["shared_neighbor_ids"]) == {"C", "D"}
+    assert top["score"] > predictions[1]["score"]
+
+
+def test_compute_link_predictions_excludes_already_connected_pairs():
+    import networkx as nx
+
+    g = nx.MultiDiGraph()
+    g.add_edge("A", "B", relation_type="calls")
+
+    predictions = compute_link_predictions(g, top_n=10)
+
+    pair_ids = [{p["entity_a_id"], p["entity_b_id"]} for p in predictions]
+    assert {"A", "B"} not in pair_ids
+
+
+def test_compute_link_predictions_empty_graph_returns_empty_list():
+    import networkx as nx
+
+    assert compute_link_predictions(nx.MultiDiGraph()) == []
+
+
+def test_compute_link_predictions_single_node_returns_empty_list():
+    import networkx as nx
+
+    g = nx.MultiDiGraph()
+    g.add_node("A")
+    assert compute_link_predictions(g) == []

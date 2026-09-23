@@ -25,6 +25,25 @@ class CaseStatus(str, Enum):
     CLOSED = "closed"
 
 
+class CaseConfidentiality(str, Enum):
+    """How much of a case's detail is exposed to a user who is NOT
+    authorized to view it, when a cross-case entity match surfaces it
+    to them (see api/routes/cross_case.py). Settable only by
+    ADMIN/SUPER_ADMIN (enforced in api/routes/cases.py's confidentiality
+    endpoint) — an Investigator cannot mark their own case restricted.
+
+    NORMAL: an unauthorized viewer sees a short summary plus the
+    owning agency/department, alongside a "Request Access" action.
+    RESTRICTED: an unauthorized viewer sees ONLY the owning agency/
+    department name — no title, no summary — alongside "Request
+    Access". Intended for highly confidential or national-level-risk
+    cases.
+    """
+
+    NORMAL = "normal"
+    RESTRICTED = "restricted"
+
+
 @dataclass
 class Case:
     """An investigation, scoped to one agency."""
@@ -32,7 +51,9 @@ class Case:
     id: str
     title: str
     agency_id: str
+    description: str = ""
     status: CaseStatus = CaseStatus.OPEN
+    confidentiality: CaseConfidentiality = CaseConfidentiality.NORMAL
     created_by_user_id: Optional[str] = None
     opened_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     assigned_investigator_ids: list = field(default_factory=list)
@@ -52,7 +73,9 @@ class Case:
             "id": self.id,
             "title": self.title,
             "agency_id": self.agency_id,
+            "description": self.description,
             "status": self.status.value,
+            "confidentiality": self.confidentiality.value,
             "created_by_user_id": self.created_by_user_id,
             "opened_at": self.opened_at,
             "assigned_investigator_ids": list(self.assigned_investigator_ids),
@@ -66,11 +89,17 @@ class Case:
         except ValueError:
             raise ValueError(f"Unknown case status: {data.get('status')!r}")
         try:
+            confidentiality = CaseConfidentiality(data.get("confidentiality", CaseConfidentiality.NORMAL.value))
+        except ValueError:
+            raise ValueError(f"Unknown case confidentiality: {data.get('confidentiality')!r}")
+        try:
             return cls(
                 id=data["id"],
                 title=data["title"],
                 agency_id=data["agency_id"],
+                description=data.get("description", ""),
                 status=status,
+                confidentiality=confidentiality,
                 created_by_user_id=data.get("created_by_user_id"),
                 opened_at=data.get("opened_at", datetime.now(timezone.utc).isoformat()),
                 assigned_investigator_ids=list(data.get("assigned_investigator_ids", [])),

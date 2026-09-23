@@ -1,9 +1,10 @@
 """
 scripts/seed_data.py
 
-Populate the database with demo agencies, one user per role, and one
-demo case — so a fresh checkout has something to log in with and
-query, without needing to hand-craft records first.
+Populate the database with demo agencies, one user per role (plus two
+extra investigators — see demo_users below) across both AG-NCRB and
+AG-WSD, and one demo case — so a fresh checkout has something to log
+in with and query, without needing to hand-craft records first.
 
 Idempotent: safe to run multiple times (checks for existing records
 by ID/badge_id before creating anything new).
@@ -34,12 +35,21 @@ def seed() -> None:
         )
 
     # One demo user per role, all in AG-NCRB, so every permission level
-    # is immediately testable after a fresh seed.
+    # is immediately testable after a fresh seed. Plus two additional
+    # investigators (one more in AG-NCRB, one in AG-WSD) so the batch
+    # seeder (scripts/seed_bulk_cases.py) has more than one
+    # investigator/agency to spread 25 cases across — needed to
+    # actually exercise cross-agency access requests (see
+    # api/routes/access_requests.py) with realistic variety, since a
+    # single investigator can't demonstrate a cross-agency request to
+    # themselves.
     demo_users = [
         ("u-investigator", "Demo Investigator", "INV001", "AG-NCRB", Role.INVESTIGATOR, "investigator123"),
         ("u-analyst", "Demo Analyst", "ANL001", "AG-NCRB", Role.ANALYST, "analyst123"),
         ("u-admin", "Demo Admin", "ADM001", "AG-NCRB", Role.ADMIN, "admin123"),
         ("u-superadmin", "Demo Super Admin", "SUP001", "AG-NCRB", Role.SUPER_ADMIN, "super123"),
+        ("u-investigator-2", "Investigator Rao", "INV002", "AG-NCRB", Role.INVESTIGATOR, "investigator123"),
+        ("u-investigator-wsd", "Investigator Fatima", "INV003", "AG-WSD", Role.INVESTIGATOR, "investigator123"),
     ]
     for user_id, name, badge_id, agency_id, role, password in demo_users:
         if repo.get_user_by_badge_id(db, badge_id) is None:

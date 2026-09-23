@@ -16,6 +16,17 @@ check (hub-and-spoke degree) uses the graph alone; the financial-
 structuring and communication-burst checks scan the raw documents
 directly, independent of the graph.
 
+Scope note on compute_link_predictions: this predicts likely-but-
+unrecorded RELATIONSHIPS between two already-known entities within an
+already-open case's graph (a structural lead — "these two share
+several neighbors but have no direct edge yet" — for an investigator
+to manually verify), NOT a risk score or a prediction about any
+individual's future behavior. It never runs against, or produces a
+score for, an entity outside the case's own already-extracted entity
+set. This is the same network-analysis-not-predictive-policing
+boundary the project as a whole holds to (see README.md: "not
+predictive policing... flags network positions").
+
 Status: implemented, not yet tuned against any labelled/real dataset —
 thresholds below are reasonable starting points, not validated cutoffs.
 """
@@ -50,6 +61,87 @@ def compute_community_detection(graph: "nx.MultiDiGraph") -> dict:
         for community_index, community in enumerate(communities)
         for node_id in community
     }
+
+
+def compute_link_predictions(graph: "nx.MultiDiGraph", top_n: int = 10) -> list[dict]:
+    """Predict likely-but-unrecorded relationships between entities
+    that don't already have a direct edge, based on how many neighbors
+    they already share — NOT a prediction about any individual's
+    future behavior (see module docstring's predictive-policing
+    guardrail). This surfaces network STRUCTURE the extraction/
+    resolution pipeline hasn't (yet) recorded a direct document for —
+    e.g. two people who both call the same three phone numbers but
+    have no FIR/CDR directly connecting them to each other — as a
+    lead for an investigator to manually verify, never as an
+    automatic edge or a standing accusation.
+
+    Uses NetworkX's Adamic-Adar index (nx.adamic_adar_index), scored
+    over the graph collapsed to a plain undirected nx.Graph (link
+    prediction on a directed multigraph isn't a standard operation;
+    direction and multi-edge-type detail from the original graph
+    don't change "do these two share neighbors", which is what this
+    measures). Adamic-Adar down-weights common neighbors that
+    themselves have very high degree (e.g. a shared "associated-with"
+    hub entity connected to hundreds of others is weak evidence of a
+    real link, vs. sharing a neighbor with only two or three
+    connections total), which plain shared-neighbor counting would
+    over-value.
+
+    Args:
+        graph: the case's built graph (graph.build.build_graph output).
+        top_n: how many highest-scoring pairs to return.
+
+    Returns:
+        Up to top_n dicts, sorted by score descending, each:
+            {"entity_a_id", "entity_b_id", "score", "shared_neighbor_ids"}
+        Empty list if the graph has fewer than 2 nodes, or if no
+        candidate pair shares any neighbor at all (score is 0 for
+        every non-adjacent pair in that case, and 0-score pairs are
+        excluded — a 0 score is "no shared-neighbor signal", not a
+        weak prediction worth surfacing).
+    """
+    if graph.number_of_nodes() < 2:
+        return []
+
+    undirected = _as_simple_undirected_graph(graph)
+    # IMPORTANT: nx.non_edges returns a generator, and passing it
+    # directly into adamic_adar_index silently produces an EMPTY
+    # result — verified empirically; adamic_adar_index's
+    # @nx._dispatchable decorator appears to inspect/consume the
+    # generator before the real computation runs. Materializing it to
+    # a concrete list first is required.
+    non_adjacent_pairs = list(nx.non_edges(undirected))
+
+    scored_pairs = list(nx.adamic_adar_index(undirected, non_adjacent_pairs))
+    scored_pairs = [(a, b, score) for a, b, score in scored_pairs if score > 0]
+    scored_pairs.sort(key=lambda item: item[2], reverse=True)
+
+    predictions = []
+    for entity_a_id, entity_b_id, score in scored_pairs[:top_n]:
+        shared_neighbor_ids = sorted(set(undirected.neighbors(entity_a_id)) & set(undirected.neighbors(entity_b_id)))
+        predictions.append({
+            "entity_a_id": entity_a_id,
+            "entity_b_id": entity_b_id,
+            "score": score,
+            "shared_neighbor_ids": shared_neighbor_ids,
+        })
+
+    return predictions
+
+
+def _as_simple_undirected_graph(graph: "nx.MultiDiGraph") -> "nx.Graph":
+    """Collapse to a plain undirected nx.Graph — required by NetworkX's
+    link-prediction functions (nx.adamic_adar_index and siblings),
+    which don't accept a MultiDiGraph. Parallel to graph.build's own
+    _as_simple_digraph (that one keeps direction, for centrality;
+    this one drops it, since shared-neighbor overlap is inherently a
+    symmetric question — "does A share a neighbor with B" doesn't
+    depend on which direction either edge originally pointed).
+    """
+    simple = nx.Graph()
+    simple.add_nodes_from(graph.nodes())
+    simple.add_edges_from(graph.edges())
+    return simple
 
 
 def compute_full_centrality_suite(graph: "nx.MultiDiGraph") -> dict:
@@ -133,7 +225,10 @@ def _detect_hub_and_spoke(graph: "nx.MultiDiGraph") -> list[dict]:
             "node_id": node_id,
             "degree": degree,
             "graph_mean_degree": round(mean, 2),
-            "detail": f"Degree {degree} is {_HUB_DEGREE_STDEV_THRESHOLD}+ standard deviations above the graph average ({mean:.2f}).",
+            "label": graph.nodes[node_id].get("canonical_text", str(node_id)),
+            "detail": (f"{graph.nodes[node_id].get('canonical_text', node_id)} "
+                       f"({str(graph.nodes[node_id].get('entity_type', 'entity')).lower()}) is linked to {degree} entities, "
+                       f"{_HUB_DEGREE_STDEV_THRESHOLD}+ standard deviations above the graph average ({mean:.2f})."),
         }
         for node_id, degree in degrees.items()
         if degree > threshold
@@ -169,29 +264,99 @@ def _detect_financial_structuring(documents: list) -> list[dict]:
     return findings
 
 
-def _detect_communication_bursts(documents: list) -> list[dict]:
-    """Scan raw CDR documents for calls between the same pair
-    clustered within _BURST_WINDOW_MINUTES.
-    """
-    from datetime import datetime, timedelta
+def _parse_ts(value):
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
 
+
+def _detect_communication_bursts(documents: list) -> list[dict]:
+    """Scan CDR documents for BURSTS: >= _BURST_MIN_CALLS calls between the
+    same caller/callee pair inside a sliding _BURST_WINDOW_MINUTES window.
+
+    The earlier version flagged a document only if ALL of its calls fell
+    inside one window -- fine for a synthetic single-burst record, but a
+    real CDR spans weeks or months, so it would essentially never fire.
+    Now every pair is scanned with a sliding window, the number of separate
+    bursts is counted (a pair that bursts repeatedly, e.g. before each
+    transport, is the pattern that matters), and unreadable timestamps are
+    skipped instead of crashing the alerts endpoint.
+    """
+    from datetime import timedelta
+
+    window = timedelta(minutes=_BURST_WINDOW_MINUTES)
     findings = []
     for doc in documents:
         calls = getattr(doc, "structured", {}).get("calls")
         if not calls or len(calls) < _BURST_MIN_CALLS:
             continue
+        by_pair: dict = {}
+        for c in calls:
+            ts = _parse_ts(c.get("timestamp"))
+            if ts is None:
+                continue
+            by_pair.setdefault((str(c.get("caller")), str(c.get("callee"))), []).append(ts)
 
-        timestamps = sorted(datetime.fromisoformat(c["timestamp"]) for c in calls)
-        window = timedelta(minutes=_BURST_WINDOW_MINUTES)
-        if timestamps[-1] - timestamps[0] <= window and len(timestamps) >= _BURST_MIN_CALLS:
+        for (caller, callee), stamps in by_pair.items():
+            stamps.sort()
+            bursts, longest, i = 0, 0, 0
+            in_burst_until = -1
+            for j in range(len(stamps)):
+                while stamps[j] - stamps[i] > window:
+                    i += 1
+                size = j - i + 1
+                if size >= _BURST_MIN_CALLS and j > in_burst_until:
+                    bursts += 1
+                    longest = max(longest, size)
+                    in_burst_until = j
+                    # skip past this burst so one burst is counted once
+                    while j + 1 < len(stamps) and stamps[j + 1] - stamps[i] <= window:
+                        j += 1
+                        in_burst_until = j
+                        longest = max(longest, j - i + 1)
+            if bursts:
+                findings.append({
+                    "type": "communication_burst",
+                    "doc_id": getattr(doc, "doc_id", None),
+                    "caller": caller, "callee": callee,
+                    "burst_count": bursts, "call_count": len(stamps), "largest_burst": longest,
+                    "detail": (f"{caller} -> {callee}: {bursts} burst(s) of {_BURST_MIN_CALLS}+ calls within "
+                               f"{_BURST_WINDOW_MINUTES} minutes (largest {longest} calls; {len(stamps)} calls in total)."),
+                })
+    return findings
+
+
+def _detect_structuring_by_sender(documents: list) -> list[dict]:
+    """Aggregate sub-threshold payments PER SENDER ACCOUNT across all
+    financial documents. A handler paying four recruiters 45,000 each is
+    invisible per-document (each record may hold only 2 payments) but
+    obvious once summed by sender -- the classic layering pattern.
+    """
+    lower_bound = _STRUCTURING_THRESHOLD * _STRUCTURING_LOWER_BOUND_FRACTION
+    by_sender: dict = {}
+    for doc in documents:
+        s = getattr(doc, "structured", {}) or {}
+        sender, receiver = s.get("sender_account"), s.get("receiver_account")
+        for t in s.get("transactions") or []:
+            amt = t.get("amount", 0) if isinstance(t, dict) else 0
+            if sender and lower_bound <= amt < _STRUCTURING_THRESHOLD:
+                rec = by_sender.setdefault(str(sender), {"n": 0, "total": 0.0, "receivers": set(), "docs": set()})
+                rec["n"] += 1
+                rec["total"] += amt
+                rec["receivers"].add(str(receiver))
+                rec["docs"].add(getattr(doc, "doc_id", None))
+    findings = []
+    for sender, rec in by_sender.items():
+        if rec["n"] >= _STRUCTURING_MIN_COUNT and len(rec["receivers"]) >= 2:
             findings.append({
-                "type": "communication_burst",
-                "doc_id": getattr(doc, "doc_id", None),
-                "call_count": len(timestamps),
-                "detail": (
-                    f"{len(timestamps)} calls within "
-                    f"{(timestamps[-1] - timestamps[0]).total_seconds() / 60:.1f} minutes."
-                ),
+                "type": "financial_structuring",
+                "node_id": f"sender-{sender}",
+                "matching_transaction_count": rec["n"],
+                "detail": (f"Account {sender} made {rec['n']} payments just under {_STRUCTURING_THRESHOLD:,} "
+                           f"(total {rec['total']:,.0f}) to {len(rec['receivers'])} different accounts across "
+                           f"{len(rec['docs'])} records."),
             })
     return findings
 
@@ -217,5 +382,6 @@ def detect_anomalies(graph: "nx.MultiDiGraph", documents: Optional[list] = None)
     findings = _detect_hub_and_spoke(graph)
     if documents:
         findings.extend(_detect_financial_structuring(documents))
+        findings.extend(_detect_structuring_by_sender(documents))
         findings.extend(_detect_communication_bursts(documents))
     return findings

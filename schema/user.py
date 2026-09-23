@@ -76,18 +76,22 @@ _HASH_ALGO = "pbkdf2_sha256"
 _HASH_ITERATIONS = 260_000
 
 
-def hash_password(password: str) -> str:
+def hash_password(password: str, iterations: int = _HASH_ITERATIONS) -> str:
     """Hash a plaintext password for storage in User.password_hash.
 
     Uses PBKDF2-HMAC-SHA256 via the stdlib hashlib (no extra
     dependency for something this security-sensitive). Encodes the
     algorithm, iteration count, and salt into the stored string so
     verify_password can check it later without needing them passed
-    in separately.
+    in separately. `iterations` defaults to this module's constant
+    but callers on the live path pass config.get_settings().pbkdf2_iterations
+    instead, so PBKDF2_ITERATIONS in .env actually takes effect —
+    verify_password reads the count back out of the stored hash, so
+    existing hashes made at a different iteration count still verify.
     """
     salt = os.urandom(16)
-    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _HASH_ITERATIONS)
-    return f"{_HASH_ALGO}${_HASH_ITERATIONS}${salt.hex()}${derived.hex()}"
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    return f"{_HASH_ALGO}${iterations}${salt.hex()}${derived.hex()}"
 
 
 def verify_password(password: str, password_hash: str) -> bool:

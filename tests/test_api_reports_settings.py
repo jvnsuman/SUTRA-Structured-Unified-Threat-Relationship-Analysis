@@ -12,7 +12,7 @@ from tests.conftest import auth_headers
 
 
 def _create_case(client, headers, title="Test Case"):
-    r = client.post("/cases/", json={"title": title}, headers=headers)
+    r = client.post("/cases/", json={"title": title, "description": "test case"}, headers=headers)
     assert r.status_code == 201
     return r.json()["id"]
 
@@ -66,7 +66,7 @@ def test_generate_list_and_download_report(client, seeded_users):
 def test_generate_report_rejects_invalid_format(client, seeded_users):
     headers = auth_headers(client, "B001", "pw1")
     case_id = _create_case(client, headers)
-    r = client.post(f"/reports/{case_id}/generate", json={"format": "pdf"}, headers=headers)
+    r = client.post(f"/reports/{case_id}/generate", json={"format": "docx"}, headers=headers)
     assert r.status_code == 400
 
 

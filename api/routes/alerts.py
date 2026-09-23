@@ -2,7 +2,7 @@
 api/routes/alerts.py
 
 Serves the "Recent Alerts" feed shown on the new dashboard home page
-(see SIH26189_Project_Notes.md Section 12/17 for the mockup this
+(see SUTRA_Project_Notes.md Section 12/17 for the mockup this
 implements). This is NOT a separate alerting subsystem — it is a thin
 read-only view over graph.analytics.detect_anomalies, which already
 exists and is real (tested in tests/test_graph_pipeline.py). No
@@ -34,12 +34,11 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-import graph.build as graph_build
 from api.auth import get_current_user
 from db import repository as repo
 from db.connection import get_db
 from graph.analytics import detect_anomalies
-from nlp.resolution import resolve_entities
+from api.casegraph import build_case_graph
 from schema.user import User
 
 router = APIRouter()
@@ -80,11 +79,8 @@ def list_alerts(case_id: str, user: User = Depends(get_current_user), db: Sessio
             detail="You are not authorized to view alerts for this case",
         )
 
-    mentions = repo.get_entities_for_case(db, case_id)
-    if mentions:
-        resolved_entities = resolve_entities(mentions)
-        relations = repo.get_relationships_for_case(db, case_id)
-        graph = graph_build.build_graph(resolved_entities, relations)
+    graph, _resolved, _mentions = build_case_graph(db, case_id)
+    if graph is not None:
         # Real documents now passed through — see module docstring.
         # detect_anomalies duck-types on .doc_id/.structured, and
         # schema.entities.SourceDocument has both (structured defaults
@@ -97,13 +93,16 @@ def list_alerts(case_id: str, user: User = Depends(get_current_user), db: Sessio
 
     alerts = []
     now = datetime.now(timezone.utc).isoformat()
-    for finding in findings:
+    for index, finding in enumerate(findings):
         presentation = _ALERT_PRESENTATION.get(
             finding["type"],
             {"title": finding["type"].replace("_", " ").title(), "severity": "medium", "tags": []},
         )
         alerts.append({
-            "id": f"alert-{finding.get('doc_id') or finding.get('node_id')}-{finding['type']}",
+            # Unique per finding: several findings of one type can share (or
+            # lack) a doc_id/node_id (e.g. aggregate structuring findings), and
+            # the dashboard uses this id as a React list key.
+            "id": f"alert-{index}-{finding.get('doc_id') or finding.get('node_id') or 'case'}-{finding['type']}",
             "title": presentation["title"],
             "detail": finding["detail"],
             "severity": presentation["severity"],

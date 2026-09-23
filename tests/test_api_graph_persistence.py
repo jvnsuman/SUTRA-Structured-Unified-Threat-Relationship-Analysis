@@ -15,7 +15,7 @@ from tests.conftest import auth_headers
 
 def _ingest_and_get_case(client, headers, raw_text: str, doc_id: str = "D1") -> str:
     """Create a case, ingest one document under it, and return the case_id."""
-    case_id = client.post("/cases/", json={"title": "Persistence test case"}, headers=headers).json()["id"]
+    case_id = client.post("/cases/", json={"title": "Persistence test case", "description": "test case"}, headers=headers).json()["id"]
     r = client.post(
         "/ingest/",
         json={"id": doc_id, "document_type": "fir", "case_id": case_id, "raw_text": raw_text},
@@ -31,7 +31,7 @@ def test_ingest_persists_entities_and_reports_relation_count(client, seeded_user
     aren't installed, rather than silently omitting it).
     """
     headers = auth_headers(client, "B001", "pw1")
-    case_id = client.post("/cases/", json={"title": "Case A"}, headers=headers).json()["id"]
+    case_id = client.post("/cases/", json={"title": "Case A", "description": "test case"}, headers=headers).json()["id"]
     r = client.post(
         "/ingest/",
         json={
@@ -66,7 +66,9 @@ def test_query_returns_real_graph_after_ingestion(client, seeded_users):
     assert body["stats"]["entitiesLinked"] >= 1
     assert len(body["nodes"]) == body["stats"]["entitiesLinked"]
     for node in body["nodes"]:
-        assert set(node.keys()) == {"id", "label", "entity_type"}
+        # original contract fields plus the review/explainability metadata
+        assert {"id", "label", "entity_type"} <= set(node.keys())
+        assert {"needsReview", "mergeConfidence", "mergeReasons", "aliases", "members"} <= set(node.keys())
 
 
 def test_query_still_returns_501_for_case_with_no_documents(client, seeded_users):
@@ -75,7 +77,7 @@ def test_query_still_returns_501_for_case_with_no_documents(client, seeded_users
     graph for a case that genuinely has nothing yet.
     """
     headers = auth_headers(client, "B001", "pw1")
-    case_id = client.post("/cases/", json={"title": "Empty case"}, headers=headers).json()["id"]
+    case_id = client.post("/cases/", json={"title": "Empty case", "description": "test case"}, headers=headers).json()["id"]
 
     r = client.get(f"/query/{case_id}", headers=headers)
     assert r.status_code == 501

@@ -5,8 +5,8 @@ Bridges data/generate_synthetic.py (which only builds in-memory
 SyntheticDocument objects) to the actual database: creates a new Case,
 assigns it to an investigator, and runs each generated synthetic
 document through the SAME pipeline api/routes/ingestion.py uses
-(extraction -> persist entities -> relation classification -> persist
-relationships) — not just a bare document insert.
+(nlp.pipeline.process_document: extraction -> rule-based relations ->
+persist entities and relationships) — not just a bare document insert.
 
 An earlier version of this script only called repo.create_document,
 which stores the raw document text but never derives or persists any
@@ -16,10 +16,17 @@ up in the dashboard's dropdown but return 501 from /query/{case_id}
 looking populated while actually being empty. This version mirrors
 ingestion.py's real behavior so a seeded case is immediately queryable.
 
+DOC_TYPE_MAP, render_structured_as_text, and ingest_one_document are
+deliberately module-level and public (not underscore-prefixed) —
+scripts/seed_bulk_cases.py imports and reuses all three directly
+rather than re-implementing the same pipeline-bridging logic a second
+time. Keep them in sync if either script's needs diverge.
+
 Usage:
     python -m scripts.populate_demo_case
     python -m scripts.populate_demo_case --title "Sector 12 trafficking ring" --firs 5 --cdrs 3 --financial 2
     python -m scripts.populate_demo_case --investigator-badge INV001
+    python -m scripts.populate_demo_case --scenario trafficking --title "Border-route trafficking ring"
 """
 
 import argparse
@@ -28,22 +35,21 @@ import uuid
 from db.connection import SessionLocal, init_db
 from db import repository as repo
 from data.generate_synthetic import generate_dataset, DocumentType
-import nlp.extraction as extraction
-import nlp.relation_classification as relation_classification
+from nlp.pipeline import process_document
 from schema.case import Case
 from schema.entities import SourceDocument
 
 # Maps data.generate_synthetic's DocumentType to
 # schema.entities.VALID_DOCUMENT_TYPES, since the two modules use
 # slightly different naming conventions.
-_DOC_TYPE_MAP = {
+DOC_TYPE_MAP = {
     DocumentType.FIR: "fir",
     DocumentType.CDR: "cdr",
     DocumentType.FINANCIAL_RECORD: "financial",
 }
 
 
-def _render_structured_as_text(synth_doc) -> str:
+def render_structured_as_text(synth_doc) -> str:
     """Render a CDR/financial SyntheticDocument's structured data as a
     natural-language sentence for extraction to run on.
 
@@ -86,20 +92,20 @@ def _render_structured_as_text(synth_doc) -> str:
     return "No content recorded."
 
 
-def _ingest_one_document(db, document: SourceDocument) -> dict:
-    """Run one document through the same pipeline api/routes/ingestion.py
-    uses: persist the document, extract entities, persist them, then
-    (if possible) classify relations and persist those too. Degrades
-    gracefully — same pattern as ingestion.py — if spaCy or
-    transformers/torch aren't installed, rather than failing the whole
-    seed run over one missing optional dependency.
+def ingest_one_document(db, document: SourceDocument) -> dict:
+    """Run one document through nlp.pipeline.process_document -- the very
+    same function api/routes/ingestion.py calls, so a seeded case and an
+    API-ingested case are processed identically (this script used to keep
+    its own hand-copied version of that logic, with the O(n^2) zero-shot
+    relation classifier and a 12-entity safety cap that silently dropped
+    relations for denser documents).
 
-    Returns a small summary dict for progress printing.
+    Degrades gracefully if spaCy or its model is unavailable.
     """
     repo.create_document(db, document)
 
     try:
-        entities = extraction.extract_entities(document.raw_text, document.id)
+        result = process_document(document)
     except RuntimeError as exc:
         return {
             "document_id": document.id,
@@ -109,38 +115,19 @@ def _ingest_one_document(db, document: SourceDocument) -> dict:
             "relation_count": 0,
         }
 
-    repo.create_entities(db, entities)
-
-    relation_count = 0
-    relation_detail = None
-    # Safety cap: classify_all_relations is O(n^2) in entity count per
-    # document. A document with an unexpectedly large entity count
-    # (e.g. from a rendering bug, or just a very dense real document)
-    # could otherwise produce a huge relationship batch in one insert —
-    # this is what caused the SSL/connection-timeout crash this
-    # function was patched to avoid. 12 entities -> up to 66 pairs is a
-    # reasonable ceiling for a single synthetic document; tune upward
-    # if real documents are legitimately denser than this.
-    _MAX_ENTITIES_FOR_RELATION_CLASSIFICATION = 12
-    if 2 <= len(entities) <= _MAX_ENTITIES_FOR_RELATION_CLASSIFICATION:
-        try:
-            relations = relation_classification.classify_all_relations(entities, document.raw_text)
-            repo.create_relationships(db, relations)
-            relation_count = len(relations)
-        except RuntimeError as exc:
-            relation_detail = str(exc)
-
+    repo.create_entities(db, result.entities)
+    repo.create_relationships(db, result.relations)
     return {
         "document_id": document.id,
         "status": "extracted",
-        "entity_count": len(entities),
-        "relation_count": relation_count,
-        "detail": relation_detail,
+        "entity_count": len(result.entities),
+        "relation_count": len(result.relations),
+        "detail": "; ".join(result.warnings) or None,
     }
 
 
 def populate(title: str, num_firs: int, num_cdrs: int, num_financial: int,
-             investigator_badge_id: str) -> str:
+             investigator_badge_id: str, scenario: str = "random", seed: int = 26189) -> str:
     """Generate a synthetic dataset, create a case for it, run every
     document through the real ingestion pipeline, and assign the given
     investigator to the case.
@@ -171,26 +158,32 @@ def populate(title: str, num_firs: int, num_cdrs: int, num_financial: int,
         created_case = repo.create_case(db, case)
         repo.assign_investigator(db, created_case.id, investigator.id)
 
-        dataset = generate_dataset(
-            num_firs=num_firs, num_cdrs=num_cdrs, num_financial=num_financial,
-        )
+        if scenario == "trafficking":
+            # Structured, fictional trafficking ring (see
+            # data/trafficking_scenario.py): recruitment funnel, transporter,
+            # safehouse behind a front organisation, sub-threshold payments.
+            from data.trafficking_scenario import generate_trafficking_ring
+            dataset = generate_trafficking_ring(seed=seed, num_firs=num_firs).documents
+        else:
+            dataset = generate_dataset(
+                num_firs=num_firs, num_cdrs=num_cdrs, num_financial=num_financial,
+            )
 
         total_entities = 0
         total_relations = 0
         extraction_unavailable = False
-        relation_unavailable = False
 
         for synth_doc in dataset:
             # FIRs carry their content in .text; CDR/financial records
-            # carry it in .structured. See _render_structured_as_text
+            # carry it in .structured. See render_structured_as_text
             # for why this can't just be str(synth_doc.structured) —
             # that fed dict/list repr syntax to extraction and produced
             # dozens of spurious phantom entities.
-            raw_text = _render_structured_as_text(synth_doc)
+            raw_text = render_structured_as_text(synth_doc)
 
             document = SourceDocument(
                 id=synth_doc.doc_id,
-                document_type=_DOC_TYPE_MAP[synth_doc.doc_type],
+                document_type=DOC_TYPE_MAP[synth_doc.doc_type],
                 raw_text=raw_text,
                 case_id=created_case.id,
                 # CDR/financial docs carry their real detection-relevant
@@ -201,20 +194,18 @@ def populate(title: str, num_firs: int, num_cdrs: int, num_financial: int,
                 # scan even for seeded demo data.
                 structured=synth_doc.structured or {},
             )
-            result = _ingest_one_document(db, document)
+            result = ingest_one_document(db, document)
 
             total_entities += result["entity_count"]
             total_relations += result["relation_count"]
             if result["status"] == "stored_pending_extraction":
                 extraction_unavailable = True
-            if result.get("detail") and result["status"] == "extracted":
-                relation_unavailable = True
 
         print(f"Created case {created_case.id!r} ({title!r}) in agency "
               f"{investigator.agency_id!r}, assigned to {investigator.name} "
               f"({investigator_badge_id}).")
         print(f"Ingested {len(dataset)} synthetic documents "
-              f"({num_firs} FIR, {num_cdrs} CDR, {num_financial} financial).")
+              f"(scenario: {scenario}).")
         print(f"Extracted {total_entities} entities, "
               f"{total_relations} relations across all documents.")
 
@@ -222,11 +213,6 @@ def populate(title: str, num_firs: int, num_cdrs: int, num_financial: int,
             print("WARNING: spaCy (or its model) was unavailable for at least "
                   "one document — some documents were stored but not extracted. "
                   "Run: python -m spacy download en_core_web_sm")
-        if relation_unavailable:
-            print("NOTE: relation classification was unavailable for at least "
-                  "one document (transformers/torch not installed) — entities "
-                  "were extracted but some relationship edges are missing. "
-                  "Run: pip install transformers torch")
 
         if total_entities > 0:
             print(f"Log in as {investigator.name} ({investigator_badge_id}) — "
@@ -258,6 +244,11 @@ def main():
                          dest="investigator_badge_id",
                          help="Badge ID of the investigator to assign this case to "
                               "(default: INV001, the seed_data.py demo investigator).")
+    parser.add_argument("--scenario", choices=["random", "trafficking"], default="random",
+                         help="'trafficking' plants a structured trafficking ring with a hub-and-spoke "
+                              "recruitment funnel, aliases, several SIMs and structured payments "
+                              "(the Women Safety Division scenario). Default: random independent records.")
+    parser.add_argument("--seed", type=int, default=26189, help="Seed for --scenario trafficking.")
     args = parser.parse_args()
 
     populate(
@@ -266,6 +257,8 @@ def main():
         num_cdrs=args.num_cdrs,
         num_financial=args.num_financial,
         investigator_badge_id=args.investigator_badge_id,
+        scenario=args.scenario,
+        seed=args.seed,
     )
 
 

@@ -70,6 +70,11 @@ def build_graph(resolved_entities: list,
             mention_ids=list(entity.mention_ids),
             source_doc_ids=sorted(entity.source_doc_ids),
             is_low_confidence_cross_merge=entity.is_low_confidence_cross_merge,
+            needs_review=entity.needs_review,
+            merge_confidence=entity.merge_confidence,
+            merge_reasons=list(entity.merge_reasons),
+            aliases=list(entity.aliases),
+            members=list(entity.members),
         )
 
     mention_to_resolved = build_mention_to_resolved_map(resolved_entities)
@@ -233,20 +238,70 @@ def compute_centrality(graph: "nx.MultiDiGraph", method: str = "betweenness") ->
     raise ValueError(f"Unknown centrality method: {method!r}. Use 'betweenness' or 'pagerank'.")
 
 
-def highlight_influencer(graph: "nx.MultiDiGraph", method: str = "betweenness") -> Optional[dict]:
-    """Identify the single highest-centrality node with a stated
-    reason, or None if the graph has no nodes.
+def rank_influencers(graph: "nx.MultiDiGraph", top_n: int = 5, method: str = "betweenness",
+                     entity_types: tuple = ("PERSON",)) -> list:
+    """Rank the graph's key INDIVIDUALS by centrality, each with a stated,
+    checkable reason.
+
+    Two deliberate choices (both found by running the planted trafficking
+    ring through this, see tests/test_trafficking_end_to_end.py):
+
+    * Only entities of `entity_types` are ranked (people by default).
+      The problem asks for influential *individuals*; ranking all nodes
+      put a handler's phone number, which sits on every path to him, at
+      the top instead of the handler.
+    * Centrality is computed on the UNDIRECTED graph. Relations such as
+      "calls" or "associated-with" are stored directionally, but two
+      recruiters sharing one handler are connected through him either
+      way; directed betweenness misses paths that run "against" an edge.
+
+    Returns [] for an empty graph. Falls back to all nodes if the graph
+    contains none of the requested types.
     """
+    import networkx as nx
+
     if graph.number_of_nodes() == 0:
-        return None
-    scores = compute_centrality(graph, method=method)
-    top_node_id = max(scores, key=scores.get)
-    return {
-        "node_id": top_node_id,
-        "score": scores[top_node_id],
-        "method": method,
-        "reason": f"Highest {method} centrality ({scores[top_node_id]:.3f}) among {graph.number_of_nodes()} entities in this graph.",
-    }
+        return []
+    undirected = nx.Graph(graph.to_undirected(as_view=False))
+    if method == "betweenness":
+        scores = nx.betweenness_centrality(undirected)
+    elif method == "pagerank":
+        scores = nx.pagerank(undirected)
+    else:
+        raise ValueError(f"Unknown centrality method: {method!r}. Use 'betweenness' or 'pagerank'.")
+
+    wanted = {t.upper() for t in entity_types}
+    candidates = [n for n, a in graph.nodes(data=True) if str(a.get("entity_type", "")).upper() in wanted]
+    scope = "people" if candidates else "entities"
+    if not candidates:
+        candidates = list(graph.nodes())
+
+    ranked = sorted(candidates, key=lambda n: (-scores.get(n, 0.0), str(n)))[:top_n]
+    out = []
+    for rank, node_id in enumerate(ranked, start=1):
+        attrs = graph.nodes[node_id]
+        neighbours = set(undirected.neighbors(node_id))
+        types: dict = {}
+        for n in neighbours:
+            t = str(graph.nodes[n].get("entity_type", "?")).lower()
+            types[t] = types.get(t, 0) + 1
+        mix = ", ".join(f"{c} {t}" for t, c in sorted(types.items(), key=lambda kv: -kv[1]))
+        docs = len(attrs.get("source_doc_ids", []) or [])
+        out.append({
+            "node_id": node_id, "rank": rank, "score": scores.get(node_id, 0.0), "method": method,
+            "degree": len(neighbours),
+            "reason": (f"Ranked #{rank} of {len(candidates)} {scope} by {method} centrality "
+                       f"({scores.get(node_id, 0.0):.3f}): linked to {len(neighbours)} entities ({mix}) "
+                       f"across {docs} source document(s)."),
+        })
+    return out
+
+
+def highlight_influencer(graph: "nx.MultiDiGraph", method: str = "betweenness") -> Optional[dict]:
+    """The single top-ranked individual (see rank_influencers) with a
+    stated reason, or None if the graph has no nodes."""
+    ranked = rank_influencers(graph, top_n=1, method=method)
+    return ranked[0] if ranked else None
 
 
 def render_graph(graph: "nx.MultiDiGraph", output_path: str = "graph.png") -> str:
@@ -288,6 +343,7 @@ _ENTITY_TYPE_COLORS = {
     "VEHICLE": "#8e6de6",
     "PHONE": "#4fd6c0",
     "ORGANIZATION": "#f76b6b",
+    "ACCOUNT": "#7bd88f",
 }
 
 

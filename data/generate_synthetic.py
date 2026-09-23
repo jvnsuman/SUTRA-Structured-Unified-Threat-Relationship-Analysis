@@ -128,20 +128,34 @@ _FIR_TEMPLATES = [
 ]
 
 
-def generate_synthetic_fir(doc_id: Optional[str] = None) -> SyntheticDocument:
+def generate_synthetic_fir(
+    doc_id: Optional[str] = None,
+    suspect_name: Optional[str] = None,
+    suspect_phone: Optional[str] = None,
+) -> SyntheticDocument:
     """Generate a single synthetic FIR-style free-text document.
 
     Args:
         doc_id: optional stable id; if omitted, one is generated.
+        suspect_name: optional fixed name for the suspect entity,
+            instead of a freshly randomized one. Lets a caller
+            deliberately plant the SAME person across multiple
+            documents/cases (see scripts/seed_bulk_cases.py's
+            cross-case overlap scenarios) rather than every FIR
+            getting a wholly independent random suspect.
+        suspect_phone: optional fixed phone number for the phone
+            entity mentioned in this FIR, same rationale as
+            suspect_name — lets a caller plant a phone number that
+            also appears in a CDR in a different case.
 
     Returns:
         A SyntheticDocument with doc_type=FIR, populated `text`, and
         `embedded_entities` recording what was planted.
     """
     complainant = generate_person_name()
-    suspect = generate_person_name()
+    suspect = suspect_name or generate_person_name()
     location = generate_location()
-    phone = generate_phone_number()
+    phone = suspect_phone or generate_phone_number()
     vehicle = generate_vehicle_plate()
     organization = generate_organization_name()
     date = _fake.date_between(start_date="-1y", end_date="today").strftime("%d %B")
@@ -169,7 +183,8 @@ def generate_synthetic_fir(doc_id: Optional[str] = None) -> SyntheticDocument:
 
 def generate_synthetic_cdr(doc_id: Optional[str] = None,
                             num_calls: int = 5,
-                            burst: bool = False) -> SyntheticDocument:
+                            burst: bool = False,
+                            caller_phone: Optional[str] = None) -> SyntheticDocument:
     """Generate a synthetic CDR-style structured record: a list of
     calls between two phone numbers over a time window.
 
@@ -178,12 +193,16 @@ def generate_synthetic_cdr(doc_id: Optional[str] = None,
         num_calls: how many call records to generate.
         burst: if True, calls are clustered within a short window
             (minutes) rather than spread across a day.
+        caller_phone: optional fixed phone number for the caller side
+            of every call, instead of a freshly randomized one — see
+            generate_synthetic_fir's suspect_phone for the same
+            cross-document-planting rationale.
 
     Returns:
         A SyntheticDocument with doc_type=CDR and `structured` containing
         a `calls` list of {caller, callee, timestamp, duration_seconds}.
     """
-    caller = generate_phone_number()
+    caller = caller_phone or generate_phone_number()
     callee = generate_phone_number()
 
     calls = []

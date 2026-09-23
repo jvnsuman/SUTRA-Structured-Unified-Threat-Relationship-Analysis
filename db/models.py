@@ -10,7 +10,7 @@ should import from this module directly.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, Float, ForeignKey, String, Table
+from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, Table, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
@@ -76,7 +76,9 @@ class CaseORM(Base):
     id = Column(String, primary_key=True)
     title = Column(String, nullable=False)
     agency_id = Column(String, ForeignKey("agencies.id"), nullable=False)
+    description = Column(String, nullable=True, default="")
     status = Column(String, nullable=False, default="open")  # schema.case.CaseStatus value
+    confidentiality = Column(String, nullable=False, default="normal")  # schema.case.CaseConfidentiality value
     created_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
     opened_at = Column(String, nullable=False)
 
@@ -124,6 +126,11 @@ class EntityORM(Base):
     normalized_text = Column(String, nullable=True)
     confidence = Column(Float, nullable=True)
     source_document_id = Column(String, ForeignKey("source_documents.id"), nullable=True)
+    # JSON-encoded ExtractedEntity.metadata (engine, alias_group,
+    # nearby_ids, script, start_char/end_char ...). Resolution reads
+    # alias_group and nearby_ids from here -- without persisting them the
+    # multi-signal resolver would have nothing but bare names to work on.
+    metadata_json = Column(String, nullable=True)
 
     source_document = relationship("SourceDocumentORM", back_populates="entities")
 
@@ -159,3 +166,117 @@ class ReportORM(Base):
     format = Column(String, nullable=False)  # schema.report.VALID_REPORT_FORMATS value
     content = Column(String, nullable=False)
     created_at = Column(String, nullable=False, default=_utc_now_iso)
+
+
+class AccessRequestORM(Base):
+    """Table form of schema.access_request.AccessRequest — see that
+    module's docstring for the full escalation lifecycle.
+    """
+
+    __tablename__ = "access_requests"
+
+    id = Column(String, primary_key=True)
+    requester_user_id = Column(String, ForeignKey("users.id"), nullable=False)
+    target_case_id = Column(String, ForeignKey("cases.id"), nullable=False)
+    matched_entity_id = Column(String, nullable=False)
+    reason = Column(String, nullable=False)
+    status = Column(String, nullable=False, default="pending_investigator")  # schema.access_request.AccessRequestStatus value
+    created_at = Column(String, nullable=False, default=_utc_now_iso)
+    escalated_at = Column(String, nullable=True)
+    resolved_at = Column(String, nullable=True)
+    resolved_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    denial_note = Column(String, nullable=True)
+
+
+class LedgerEntryORM(Base):
+    """Table form of ledger.chain.LedgerEntry — the hash-chained,
+    append-only integrity ledger. See ledger/chain.py's module
+    docstring for the tamper-evidence design. sequence_number and
+    entry_hash are both unique: sequence_number enforces there is
+    exactly one entry per position in the chain (no gaps, no
+    duplicates at write time — DB-level defense-in-depth alongside
+    the hash-chain check itself), and entry_hash being unique means
+    two entries can never accidentally collide.
+
+    No update or delete path exists anywhere in db.repository for
+    this table, by design — an append-only table with no ORM-level
+    update method is the actual enforcement of "append-only" at the
+    application layer (a DB admin with raw SQL access could still
+    edit rows directly, which is exactly the tampering
+    ledger.chain.verify_chain is built to detect after the fact).
+    """
+
+    __tablename__ = "ledger_entries"
+
+    id = Column(String, primary_key=True)
+    sequence_number = Column(Integer, nullable=False, unique=True)
+    event_type = Column(String, nullable=False)  # ledger.chain.LedgerEventType value
+    payload = Column(String, nullable=False)  # JSON-encoded dict, same encode-as-string pattern as UserORM.preferences
+    prev_hash = Column(String, nullable=False)
+    entry_hash = Column(String, nullable=False, unique=True)
+    created_at = Column(String, nullable=False, default=_utc_now_iso)
+
+
+class EvidenceLinkORM(Base):
+    """Persisted explainability link: resolved entity -> source document.
+
+    Replaces the old in-memory dict (lost on every restart, and shared
+    across users with no case check). entity_id is a deterministic
+    ResolvedEntity.id (hash of member mention ids -- see nlp.resolution);
+    case_id lets the evidence endpoint enforce the same case
+    authorization the graph endpoint does.
+    """
+
+    __tablename__ = "evidence_links"
+    __table_args__ = (
+        UniqueConstraint("entity_id", "document_id", name="uq_evidence_entity_document"),
+        Index("ix_evidence_links_entity_id", "entity_id"),
+    )
+
+    id = Column(String, primary_key=True)
+    entity_id = Column(String, nullable=False)
+    document_id = Column(String, ForeignKey("source_documents.id"), nullable=False)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    created_at = Column(String, nullable=False, default=_utc_now_iso)
+
+
+class ResolutionOverrideORM(Base):
+    """An investigator's decision about two entity mentions: "never_merge"
+    ("these are different people") or "force_merge" ("these are the same").
+    Applied by api/routes/query.py on every resolution run for the case.
+    """
+
+    __tablename__ = "resolution_overrides"
+    __table_args__ = (UniqueConstraint("case_id", "mention_a_id", "mention_b_id", name="uq_override_pair"),)
+
+    id = Column(String, primary_key=True)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False, index=True)
+    mention_a_id = Column(String, nullable=False)
+    mention_b_id = Column(String, nullable=False)
+    action = Column(String, nullable=False)  # "never_merge" | "force_merge"
+    note = Column(String, nullable=True)
+    created_by_user_id = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(String, nullable=False, default=_utc_now_iso)
+
+
+class AuditLogORM(Base):
+    """Who did what, when -- security-relevant actions (logins, failed
+    logins, user/role/agency/case-access changes, overrides, exports).
+    Append-only at the application layer (no update/delete in
+    db.repository). Complements the hash-chained ledger, which covers
+    evidence integrity; this covers administrative and access activity.
+    """
+
+    __tablename__ = "audit_log"
+
+    id = Column(String, primary_key=True)
+    created_at = Column(String, nullable=False, default=_utc_now_iso, index=True)
+    actor_user_id = Column(String, nullable=True)
+    actor_badge_id = Column(String, nullable=True)
+    action = Column(String, nullable=False, index=True)
+    target_type = Column(String, nullable=True)
+    target_id = Column(String, nullable=True)
+    detail = Column(String, nullable=True)   # JSON-encoded dict
+    ip_address = Column(String, nullable=True)
+    success = Column(String, nullable=False, default="true")  # "true"/"false"
+
