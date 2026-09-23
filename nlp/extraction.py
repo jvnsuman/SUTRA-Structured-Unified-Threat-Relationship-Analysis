@@ -4,12 +4,23 @@ nlp/extraction.py
 NLP entity extraction pipeline: load_synthetic_fir, extract_entities,
 normalize_entity, confidence_score.
 
-Engines:
-    - spaCy (en_core_web_sm): PERSON, LOCATION, ORGANIZATION.
-    - Regex: PHONE and VEHICLE.
-    - HuggingFace transformers pipeline (optional): secondary NER pass
-      for names spaCy's English model misses. Off by default, enabled
-      via use_multilingual_pass=True and HF_NER_MODEL env var.
+Engines (applied in this order; earlier engines claim their character
+spans so later ones cannot double-count):
+    1. Regex: ACCOUNT (a/c numbers, UPI ids), PHONE, VEHICLE.
+    2. Alias rule (nlp/indian_rules.py): "X alias Y", "X @ Y", "X urf Y".
+    3. Devanagari rules (nlp/indian_rules.py): Hindi names/places.
+    4. spaCy (en_core_web_sm): PERSON, LOCATION, ORGANIZATION, run on a
+       de-shouted copy of the text (ALL-CAPS words title-cased, same
+       length, so offsets are unchanged).
+    5. Rule corrections + recovery for known spaCy failure modes on
+       Indian text (nlp/indian_rules.py).
+    6. HuggingFace transformers pipeline (optional): secondary NER pass.
+       Off by default, enabled via use_multilingual_pass=True and the
+       HF_NER_MODEL env var.
+
+ExtractedEntity / EntityType / normalize_entity / confidence_score live
+in nlp/entities.py and are re-exported here, so existing imports from
+nlp.extraction keep working.
 """
 
 from __future__ import annotations
@@ -17,31 +28,19 @@ from __future__ import annotations
 import os
 import re
 import uuid
-from dataclasses import dataclass, field
-from enum import Enum
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-
-class EntityType(str, Enum):
-    PERSON = "PERSON"
-    LOCATION = "LOCATION"
-    PHONE = "PHONE"
-    VEHICLE = "VEHICLE"
-    ORGANIZATION = "ORGANIZATION"
-
-
-@dataclass
-class ExtractedEntity:
-    id: str
-    text: str
-    entity_type: EntityType
-    source_doc_id: str
-    start_char: int
-    end_char: int
-    confidence: float = 0.0
-    normalized_text: Optional[str] = None
-    metadata: dict = field(default_factory=dict)
+from nlp.entities import (  # noqa: F401  (re-exported for existing importers)
+    EntityType,
+    ExtractedEntity,
+    confidence_score,
+    make_entity,
+    normalize_entity,
+)
+from nlp import indian_rules
+from nlp.gazetteer import FIRST_NAMES, NICKNAMES, SURNAMES
 
 
 @dataclass
@@ -89,15 +88,18 @@ def load_synthetic_fir(text: str, doc_id: Optional[str] = None,
 # 2. extract_entities
 # ---------------------------------------------------------------------------
 
-# Indian mobile numbers, tolerant of space/hyphen separators and an
-# optional country code. Capture group isolates the 10-digit number so
-# a "+91 " prefix isn't included in the matched span.
+# Indian mobile numbers: 10 digits starting 6-9, grouped 3-3-4 or 5-5,
+# optional +91 / 91 / 0 prefix. Lookarounds stop this matching inside a
+# longer digit run (bank account numbers). The capture group isolates
+# the 10-digit number so a prefix isn't part of the matched span.
 _PHONE_PATTERN = re.compile(
-    r"(?:\+?91[-\s]?|0)?\b([6-9]\d{2}[-\s]?\d{3}[-\s]?\d{4})\b"
+    r"(?<!\d)(?:\+?91[-\s]?|0)?([6-9]\d{4}[-\s]?\d{5}|[6-9]\d{2}[-\s]?\d{3}[-\s]?\d{4})(?!\d)"
 )
 
+# Indian registration plates: state (2 letters), RTO (1-2 digits), series
+# (1-3 letters — "DL8CAF5031" has a 3-letter series), number (4 digits).
 _VEHICLE_PATTERN = re.compile(
-    r"\b[A-Z]{2}[-\s]?\d{1,2}[-\s]?[A-Z]{1,2}[-\s]?\d{4}\b"
+    r"\b[A-Z]{2}[-\s]?\d{1,2}[-\s]?[A-Z]{1,3}[-\s]?\d{4}\b"
 )
 
 _LOCATION_HINTS = (
@@ -140,6 +142,7 @@ def _get_indian_name_components() -> frozenset:
         components.add(fake.first_name())
         components.add(fake.last_name())
 
+    components |= {n.title() for n in (FIRST_NAMES | SURNAMES | NICKNAMES)}
     _INDIAN_NAME_COMPONENTS = frozenset(components)
     return _INDIAN_NAME_COMPONENTS
 
@@ -530,45 +533,81 @@ def extract_entities(text: str, source_doc_id: str,
                       use_multilingual_pass: bool = False) -> list:
     """Extract typed entities from document text.
 
-    Pipeline: regex (PHONE, VEHICLE) -> spaCy (PERSON, LOCATION,
-    ORGANIZATION) -> optional HuggingFace pass if use_multilingual_pass.
+    See the module docstring for the engine order. Returned entities are
+    sorted by start offset, never overlap, and carry metadata["engine"].
+    PERSON entities also carry metadata["nearby_ids"] (phones/vehicles/
+    accounts in the same sentence) and, when the document itself states an
+    alias ("X alias Y"), a shared metadata["alias_group"].
 
     Raises:
         RuntimeError: if spaCy isn't installed/downloaded, or (when
             use_multilingual_pass=True) the HF pipeline isn't configured.
     """
-    entities = []
+    ascii_text = indian_rules.normalize_digits(text)   # same length as text
+    work_text = indian_rules.recase_shouting(text)     # same length as text
 
-    for match in _PHONE_PATTERN.finditer(text):
-        entity = _make_entity(
-            text=match.group(1),
-            entity_type=EntityType.PHONE,
-            source_doc_id=source_doc_id,
-            start=match.start(1),
-            end=match.end(1),
-        )
-        entity.metadata["engine"] = "regex"
+    entities: list = []
+    claimed: list = []
+
+    def _claim(entity) -> bool:
+        if _overlaps_any((entity.start_char, entity.end_char), claimed):
+            return False
         entities.append(entity)
+        claimed.append((entity.start_char, entity.end_char))
+        return True
 
-    for match in _VEHICLE_PATTERN.finditer(text):
-        entity = _make_entity(
-            text=match.group(),
-            entity_type=EntityType.VEHICLE,
-            source_doc_id=source_doc_id,
-            start=match.start(),
-            end=match.end(),
-        )
-        entity.metadata["engine"] = "regex"
-        entities.append(entity)
+    for entity in indian_rules.find_account_entities(ascii_text, source_doc_id):
+        _claim(entity)
 
-    claimed_spans = [(e.start_char, e.end_char) for e in entities]
+    for match in _PHONE_PATTERN.finditer(ascii_text):
+        span = (match.start(1), match.end(1))
+        if _overlaps_any(span, claimed):
+            continue
+        _claim(make_entity(text[span[0]:span[1]], EntityType.PHONE, source_doc_id,
+                           span[0], span[1], engine="regex"))
 
-    entities.extend(_extract_with_spacy(text, source_doc_id, claimed_spans))
+    for match in _VEHICLE_PATTERN.finditer(ascii_text):
+        _claim(make_entity(text[match.start():match.end()], EntityType.VEHICLE, source_doc_id,
+                           match.start(), match.end(), engine="regex"))
+
+    for entity in indian_rules.find_alias_groups(work_text, source_doc_id):
+        _claim(entity)
+
+    for entity in indian_rules.find_devanagari_entities(text, source_doc_id, claimed):
+        _claim(entity)
+
+    for entity in indian_rules.find_org_entities(work_text, source_doc_id):
+        _claim(entity)
+
+    entities.extend(_extract_with_spacy(work_text, source_doc_id, list(claimed)))
 
     if use_multilingual_pass:
-        entities.extend(_extract_with_huggingface(text, source_doc_id, claimed_spans))
+        entities.extend(_extract_with_huggingface(text, source_doc_id, list(claimed)))
 
+    entities = indian_rules.clean_and_reclassify(entities, work_text, source_doc_id)
+    entities = indian_rules.recover_gazetteer_entities(entities, work_text, source_doc_id)
+
+    # Entities were located on the de-shouted copy; report the ORIGINAL text.
+    for entity in entities:
+        original = text[entity.start_char:entity.end_char]
+        if entity.text != original:
+            entity.text = original
+            entity.normalized_text = normalize_entity(entity)
+            entity.confidence = confidence_score(entity)
+
+    entities = _drop_overlaps(entities)
+    indian_rules.attach_nearby_identifiers(entities, work_text)
     return entities
+
+
+def _drop_overlaps(entities: list) -> list:
+    """Keep the earliest, then longest, of any overlapping entities."""
+    kept: list = []
+    for entity in sorted(entities, key=lambda e: (e.start_char, -(e.end_char - e.start_char))):
+        if kept and entity.start_char < kept[-1].end_char:
+            continue
+        kept.append(entity)
+    return kept
 
 
 def _overlaps_any(span, others) -> bool:
@@ -589,67 +628,7 @@ def _fully_contained_in_any(span, others) -> bool:
 
 def _make_entity(text: str, entity_type: EntityType, source_doc_id: str,
                   start: int, end: int) -> ExtractedEntity:
-    entity = ExtractedEntity(
-        id=f"ent-{uuid.uuid4().hex[:12]}",
-        text=text,
-        entity_type=entity_type,
-        source_doc_id=source_doc_id,
-        start_char=start,
-        end_char=end,
-    )
-    entity.normalized_text = normalize_entity(entity)
-    entity.confidence = confidence_score(entity)
-    return entity
-
-
-# ---------------------------------------------------------------------------
-# 3. normalize_entity
-# ---------------------------------------------------------------------------
-
-_WHITESPACE_RUN = re.compile(r"\s+")
-
-
-def normalize_entity(entity: ExtractedEntity) -> str:
-    """Clean casing/punctuation before resolution.
-
-    PHONE: strip to digits, drop leading "91" country code if present.
-    VEHICLE: uppercase, strip whitespace/hyphens.
-    PERSON/LOCATION/ORGANIZATION: collapse whitespace, title-case.
-    """
-    raw = entity.text.strip()
-
-    if entity.entity_type == EntityType.PHONE:
-        digits = re.sub(r"\D", "", raw)
-        if len(digits) == 12 and digits.startswith("91"):
-            digits = digits[2:]
-        return digits
-
-    if entity.entity_type == EntityType.VEHICLE:
-        return re.sub(r"[\s-]", "", raw).upper()
-
-    collapsed = _WHITESPACE_RUN.sub(" ", raw)
-    # Preserve short all-caps acronyms (e.g. "MG") instead of .title()-casing them
-    words = [w if w.isupper() and len(w) <= 4 else w.title() for w in collapsed.split(" ")]
-    return " ".join(words)
-
-
-# ---------------------------------------------------------------------------
-# 4. confidence_score
-# ---------------------------------------------------------------------------
-
-def confidence_score(entity: ExtractedEntity) -> float:
-    """Extraction confidence in [0.0, 1.0]: 0.9 for regex (PHONE/VEHICLE),
-    the model's own score for huggingface, 0.75 fixed for spacy.
-    """
-    engine = entity.metadata.get("engine")
-
-    if entity.entity_type in (EntityType.PHONE, EntityType.VEHICLE):
-        return 0.9
-
-    if engine == "huggingface" and "hf_score" in entity.metadata:
-        return float(entity.metadata["hf_score"])
-
-    return 0.75
+    return make_entity(text, entity_type, source_doc_id, start, end)
 
 
 if __name__ == "__main__":

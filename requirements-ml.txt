@@ -1,0 +1,12 @@
+# OPTIONAL heavy ML extras. Not needed for the default pipeline.
+#
+#   pip install -r requirements.txt -r requirements-ml.txt
+#
+# transformers/torch enable:
+#   * the zero-shot NLI relation classifier layered on top of the rules
+#     (nlp/relation_classification.py; set USE_ZERO_SHOT_RELATIONS=1)
+#   * the multilingual HuggingFace NER pass (nlp/extraction.py; set HF_NER_MODEL)
+# Check the license of any model you pick: weights are often licensed
+# separately from the library (see THIRD_PARTY_NOTICES.md).
+transformers>=4.40,<5.0
+torch>=2.3,<3.0
