@@ -181,8 +181,17 @@ def populate(title: str, num_firs: int, num_cdrs: int, num_financial: int,
             # dozens of spurious phantom entities.
             raw_text = render_structured_as_text(synth_doc)
 
+            # The trafficking scenario ships fixed document IDs (fir-001,
+            # cdr-001, fin-001, ...) and source_documents.id is a
+            # database-wide primary key, so a second run used to fail on
+            # the very first document. Namespace scenario IDs with this
+            # case's ID so the scenario can be loaded into any number of
+            # cases. (The random generator already uses unique IDs.)
+            doc_id = (f"{created_case.id[:8]}-{synth_doc.doc_id}"
+                      if scenario == "trafficking" else synth_doc.doc_id)
+
             document = SourceDocument(
-                id=synth_doc.doc_id,
+                id=doc_id,
                 document_type=DOC_TYPE_MAP[synth_doc.doc_type],
                 raw_text=raw_text,
                 case_id=created_case.id,

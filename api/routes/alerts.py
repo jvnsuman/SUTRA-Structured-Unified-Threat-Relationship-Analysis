@@ -49,9 +49,9 @@ router = APIRouter()
 # graph.analytics's internal finding "type" strings changing shape.
 _ALERT_PRESENTATION = {
     "hub_and_spoke": {
-        "title": "High Risk Connection Detected",
+        "title": "Highly Connected Entity Detected",
         "severity": "high",
-        "tags": ["#HighRisk", "#Association"],
+        "tags": ["#Hub", "#Association"],
     },
     "financial_structuring": {
         "title": "Suspicious Transaction",

@@ -453,7 +453,7 @@ export default function GraphCanvas({ graphData, onNodeSelect, searchQuery, type
             ))}
             <div className="graph-legend-item">
               <span className="graph-legend-dot graph-legend-dot-ring" />
-              Main suspect
+              Most connected person
             </div>
           </div>
           <div className="graph-controls">

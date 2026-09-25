@@ -11,11 +11,11 @@
  * <Dashboard/> component, which is why the two pages looked
  * identical — this file (plus the App.jsx routing change) is the fix.
  *
- * "Risk Score" and the "Key Suspect" tag are connection-count
- * heuristics derived from graphData — there is no ML risk-scoring
- * pipeline in this project, so these are clearly labeled as computed,
- * not a real model output, same spirit as Dashboard.jsx's
- * computeMetrics/computeTopEntities.
+ * The "Most connected" tag is a connection-count heuristic derived from
+ * graphData. There is deliberately no risk score anywhere in this
+ * project (backend or UI): SUTRA shows structural positions inside an
+ * open case, never a verdict about a person. Same spirit as
+ * Dashboard.jsx's computeMetrics/computeTopEntities.
  *
  * "View Full Profile" has no dedicated profile page/route yet, so it
  * surfaces an honest toast instead of linking somewhere fake.
@@ -152,7 +152,6 @@ export default function NetworkGraph({ graphData, caseLoading, usingSampleData, 
   const { direct, indirect } = graphData ? connectionCounts(graphData, selectedEntityId) : { direct: 0, indirect: 0 }
   const totalLinks = direct + indirect
 
-  const riskScore = selectedNode ? Math.min(96, 20 + (degree[selectedNode.id] || 0) * 12) : null
   const phone = selectedNode && selectedNode.entity_type !== 'phone' ? findConnectedLabel(graphData, selectedNode.id, 'phone') : null
   const location = selectedNode && selectedNode.entity_type !== 'location' ? findConnectedLabel(graphData, selectedNode.id, 'location') : null
 
@@ -221,17 +220,13 @@ export default function NetworkGraph({ graphData, caseLoading, usingSampleData, 
                 </span>
                 <div>
                   <div className="entity-details-name">{selectedNode.label}</div>
-                  {selectedNode.id === keyEntityId && <span className="entity-tag">Key Suspect</span>}
+                  {selectedNode.id === keyEntityId && <span className="entity-tag">Most connected</span>}
                 </div>
               </div>
               <dl className="entity-details-list">
                 <div>
                   <dt>Type</dt>
                   <dd>{TYPE_LABELS[selectedNode.entity_type] || selectedNode.entity_type}</dd>
-                </div>
-                <div>
-                  <dt>Risk Score</dt>
-                  <dd>{riskScore}%</dd>
                 </div>
                 <div>
                   <dt>Connections</dt>
