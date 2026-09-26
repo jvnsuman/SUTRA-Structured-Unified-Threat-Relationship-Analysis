@@ -32,15 +32,42 @@ source evidence; the investigator makes the final call, not the algorithm.
   reports) — this traceability is what makes explainability (stage 6)
   possible.
 
+## Roles & permissions
+
+The system's `User` entity (who logs into the software — investigators,
+analysts, admins) is kept architecturally and physically separate from the
+`Person` entity in the criminal-network graph (who's a suspect in a case).
+Conflating the two would be both a data-integrity bug and a serious privacy
+problem: user auth data must never leak into, or be queryable alongside,
+case entity data.
+
+Four roles (`schema/user.py`), enforced both in the UI (route-level gating)
+and — authoritatively — in the API (`api/auth.require_role` /
+`api/permissions.py`):
+
+| Role             | Scope                                                                        |
+| ---------------- | ------------------------------------------------------------------------------ |
+| **Investigator** | View + edit own assigned cases; full dashboard access for those cases          |
+| **Analyst**      | Cross-case, read-only view scoped to their own agency; no edit rights          |
+| **Admin**        | Manage user accounts, resolve access requests, view audit log — own agency     |
+| **Super Admin**  | Everything Admin can do, across every agency                                  |
+
+See the README's [Roles & permissions](../README.md#roles--permissions) and
+[API surface](../README.md#api-surface) sections for the enforcement points.
+
 ## Tech stack
 
-| Layer | Stack |
-|---|---|
-| NLP/ML | spaCy, HuggingFace Transformers, IndicNER (verify model license before use) |
+Full per-layer detail lives in the README's
+[Tech stack](../README.md#tech-stack) table — kept in one place so this
+doesn't drift out of sync. Summary:
+
+| Layer             | Stack                                                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| NLP/ML            | spaCy (`en_core_web_sm`) + an Indian-FIR rule layer (`nlp/indian_rules.py`, `nlp/gazetteer.py`, `nlp/translit.py`); optional zero-shot relation layer (`requirements-ml.txt`). No IndicNER-class model adopted — no checkpoint with a verified license found (see `THIRD_PARTY_NOTICES.md`). |
 | Entity resolution | Multi-signal scoring (name + alias + shared identifiers + context, combined by noisy-OR) with constraint-aware clustering, review flags and persisted investigator overrides — `nlp/resolution.py`; see `docs/EVALUATION.md` |
-| Graph | NetworkX (preferred — see LICENSE notes on Neo4j GPLv3 conflict) |
-| Backend/API | Flask or FastAPI, PostgreSQL/SQLite for evidence-trail records |
-| Frontend | React, Cytoscape.js or D3.js, Tailwind CSS |
+| Graph             | NetworkX (preferred — see `THIRD_PARTY_NOTICES.md` on Neo4j Community's GPLv3 conflict)                                  |
+| Backend/API       | FastAPI, PostgreSQL (SQLite for tests), Alembic migrations                                                               |
+| Frontend          | React + Vite, Cytoscape.js                                                                                               |
 
 See `THIRD_PARTY_NOTICES.md` for the full dependency license audit.
 
@@ -64,11 +91,11 @@ cross-document picture and ingestion stays append-only.
    cannot bridge "Ramesh Sharma" and "Ramesh Verma".
 4. **Review, not silence.** ≥ 0.80 merges silently; 0.60–0.80 merges and is
    flagged `needsReview` with its reasons; below 0.60 does not merge.
-   Investigators can split (`never_merge`) or confirm (`force_merge`) any pair;
-   overrides persist per case and apply on every rebuild.
-5. **Stable ids.** A resolved entity's id is a hash of its member mention ids,
-   so the same evidence gives the same node id every time — which is what makes
-   the persisted evidence trail and the ledger meaningful.
+   Investigators can split (`never_merge`) or confirm (`force_merge`) any
+   pair; overrides persist per case and apply on every rebuild.
+5. **Stable ids.** A resolved entity's id is a hash of its member mention
+   ids, so the same evidence gives the same node id every time — which is
+   what makes the persisted evidence trail and the ledger meaningful.
 
 ## Trafficking-specific structure (Women Safety Division)
 
@@ -78,7 +105,7 @@ who uses a nickname and several SIMs), a transporter and vehicle, a safehouse
 behind a front organisation, and commission payments kept just under a
 reporting threshold — and writes the paper trail (FIRs incl. Hindi, a
 surveillance report, an intelligence note, CDRs, financial records). The
-pipeline must *discover* it: the handler resolves to one node, ranks as the top
-influencer, and the hub-and-spoke, structuring and communication-burst alerts
-fire (`tests/test_trafficking_end_to_end.py`). The alerts describe network
-patterns in an open case; they do not score individuals.
+pipeline must *discover* it: the handler resolves to one node, ranks as the
+top influencer, and the hub-and-spoke, structuring and communication-burst
+alerts fire (`tests/test_trafficking_end_to_end.py`). The alerts describe
+network patterns in an open case; they do not score individuals.
