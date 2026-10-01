@@ -13,6 +13,56 @@
 Cross-cutting: synthetic data generator (feeds stage 1), ethics guardrails
 (feeds stage 5).
 
+## Pipeline flow
+
+How data moves through the seven stages. The side components support a stage
+but are not extra stages.
+
+```mermaid
+flowchart TD
+    SYN["Synthetic data generator<br/>Faker, trafficking scenario"]
+    SRC["Raw case data<br/>FIR, CDR, financial, social, intel"]
+
+    S1["1. Data ingestion<br/>POST /ingest/ per document"]
+    S2["2. NLP entity extraction<br/>spaCy + Indian-FIR rules"]
+    S3["3. Entity resolution<br/>Multi-signal, explainable merges"]
+    S4["4. Graph construction<br/>NetworkX typed nodes and edges"]
+    S5["5. Graph analytics<br/>Centrality, Louvain, link prediction"]
+    S6["6. Explainability<br/>Every flag traces to source"]
+    S7["7. Investigator dashboard<br/>React, Cytoscape.js, drill-down"]
+
+    DB[("PostgreSQL store<br/>Mentions, cases, evidence")]
+    REL["Relations + CDR parsing<br/>Rules, structured rows"]
+    REV["Investigator review<br/>Split or confirm merges"]
+    ALR["Alert detectors<br/>Hub-and-spoke, structuring, bursts"]
+    LED["Integrity ledger<br/>SHA-256 hash chain"]
+    RPT["Case reports<br/>Markdown, CSV, PDF"]
+
+    SYN -.-> SRC
+    SRC --> S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7
+
+    S1 --> DB
+    S2 --> REL
+    S3 <--> REV
+    S5 --> ALR
+    S6 --> LED
+    S7 --> RPT
+```
+
+| # | Stage | What happens | Main code |
+|---|---|---|---|
+| 1 | Data ingestion | Each document is posted into a case; mentions and evidence links are persisted. | `api/routes/ingestion.py`, `db/repository.py` |
+| 2 | NLP entity extraction | spaCy plus the Indian-FIR rule layer extract entities; relations come from deterministic rules; CDR and financial rows are parsed directly into entities and edges. | `nlp/pipeline.py`, `nlp/extraction.py`, `nlp/indian_rules.py`, `nlp/gazetteer.py`, `nlp/translit.py`, `nlp/relation_rules.py`, `nlp/structured.py` |
+| 3 | Entity resolution | Runs at query time over all persisted mentions in a case (see [How entity resolution decides](#how-entity-resolution-decides)). | `api/casegraph.py`, `nlp/resolution.py`, `nlp/confidence.py` |
+| 4 | Graph construction | Resolved entities become typed NetworkX nodes and edges. | `graph/build.py` |
+| 5 | Graph analytics | Centrality, Louvain communities, anomaly detection, link prediction. | `graph/analytics.py`, `api/routes/alerts.py` |
+| 6 | Explainability | Every flag links to its source documents; evidence-linking events are appended to the hash-chained ledger. | `graph/explainability.py`, `db.models.EvidenceLinkORM`, `ledger/chain.py` |
+| 7 | Investigator dashboard | Interactive graph, evidence panel, ingestion form, alerts feed, reports. | `dashboard/`, `api/report_builder.py` |
+
+The ledger records case creation, evidence-linking events and access-request
+resolutions as a parallel audit trail; it is not the primary store for that
+data.
+
 ## Scope boundary
 
 This is **network analysis of known/already-open cases**, not predictive
