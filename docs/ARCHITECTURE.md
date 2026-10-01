@@ -18,6 +18,10 @@ Cross-cutting: synthetic data generator (feeds stage 1), ethics guardrails
 How data moves through the seven stages. The side components support a stage
 but are not extra stages.
 
+Show Image
+
+Solid boxes are the seven pipeline stages; dashed boxes are supporting components. Colors group the stages into four layers: input, intelligence, evidence and trust, and investigator.
+
 ```mermaid
 flowchart TD
     SYN["Synthetic data generator<br/>Faker, trafficking scenario"]
